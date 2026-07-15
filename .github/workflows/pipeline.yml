@@ -1,0 +1,58 @@
+name: CI/CD Boilerplate
+on:
+  pull_request:
+    branches: ["main"]
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+        working-directory: ./app/web
+
+      - name: Run build
+        run : pnpm run build
+        working-directory: ./app/web
+        shell: bash
+        env:
+          VITE_API_URL: ./app/api
+  api:
+    runs-on: ubuntu:latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: install node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name : install pnpm
+        uses: pnpm/action-setup
+        with :
+          verison: 10
+
+      - name : install dependecies
+        run : pnpm install --frozen-lockfile
+        shell: bash
+        working-directory: ./app/api
