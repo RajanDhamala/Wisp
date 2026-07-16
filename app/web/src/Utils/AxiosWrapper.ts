@@ -1,16 +1,17 @@
 
 
 import axios, { type AxiosInstance, type AxiosResponse } from "axios";
+import { API_BASE_URL } from "./ApiConfig";
 
-interface ApiResponse<T = any> {
+interface ApiResponse<T = unknown> {
   success: boolean;
   message: string;
   data: T;
-  errors?: any[];
+  errors?: unknown[];
 }
 
 const api: AxiosInstance = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || "/api",
+  baseURL: API_BASE_URL,
   timeout: 10000,
   headers: { "Content-Type": "application/json" },
   withCredentials: true, // send cookies automatically
@@ -21,13 +22,12 @@ const api: AxiosInstance = axios.create({
 
 // Response interceptor
 api.interceptors.response.use(
-  (response: AxiosResponse<ApiResponse>) => {
+  (response: AxiosResponse<ApiResponse>): AxiosResponse<unknown> => {
     const res = response.data;
     if (!res.success) {
-      // Backend returned ApiError format
-      return Promise.reject(res);
+      throw new Error(res.message || "The API request failed");
     }
-    return res.data; // only return the actual data
+    return { ...response, data: res.data };
   },
   (error) => {
     if (error.response?.status === 401) {

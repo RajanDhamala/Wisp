@@ -17,8 +17,22 @@ model User {
   email     String     @unique
   avatar    String?
   session   Sessions[]
+  projects  Project[]
   createdAt DateTime   @default(now())
   provider  String
+}
+
+model Project {
+  id        String     @id @default(uuid())
+  name      String
+  owner     String
+  user      User       @relation(fields: [owner], references: [id], onDelete: Cascade)
+  sessions  Sessions[]
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  @@unique([owner, name])
+  @@index([owner, updatedAt])
 }
 
 model Sessions {
@@ -26,11 +40,14 @@ model Sessions {
   title     String     @default("New chat")
   owner     String
   user      User       @relation(fields: [owner], references: [id], onDelete: Cascade)
+  projectId String?
+  project   Project?   @relation(fields: [projectId], references: [id], onDelete: SetNull)
   createdAt DateTime   @default(now())
   updatedAt DateTime   @updatedAt
   messages  Messages[]
 
   @@index([owner, updatedAt])
+  @@index([projectId, updatedAt])
 }
 
 enum MessageRole {

@@ -8,9 +8,15 @@ importers:
 
   .:
     dependencies:
+      '@codesandbox/sandpack-client':
+        specifier: 2.19.8
+        version: 2.19.8
       '@codesandbox/sandpack-react':
         specifier: ^2.20.0
         version: 2.20.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+      '@lobehub/icons-static-svg':
+        specifier: ^1.93.0
+        version: 1.93.0
       '@tailwindcss/vite':
         specifier: ^4.3.0
         version: 4.3.2(vite@7.3.6(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0))
@@ -462,6 +468,9 @@ packages:
 
   '@lezer/lr@1.4.10':
     resolution: {integrity: sha512-rnCpTIBafOx4mRp43xOxDJbFipJm/c0cia/V5TiGlhmMa+wsSdoGmUN3w5Bqrks/09Q/D4tNAmWaT8p6NRi77A==}
+
+  '@lobehub/icons-static-svg@1.93.0':
+    resolution: {integrity: sha512-in3w3Epepw4h/Opw0zIyOSVrABioI/QDDyxINRl/kaVkIfKlGms+RVtRH3rXtnALpCEIRVm/kJo8bphoT59Bow==}
 
   '@marijn/find-cluster-break@1.0.3':
     resolution: {integrity: sha512-FY+MKLBoTsLNJF/eLWaOsXGdz6uh3Iu1axjPf6TUq92IYumcTcXWHoS747JARLkcdlJ/Waiaxc5wQfFO8jC6NA==}
@@ -2069,6 +2078,8 @@ snapshots:
   '@lezer/lr@1.4.10':
     dependencies:
       '@lezer/common': 1.5.2
+
+  '@lobehub/icons-static-svg@1.93.0': {}
 
   '@marijn/find-cluster-break@1.0.3': {}
 
