@@ -20,7 +20,7 @@ loads the saved response when the user returns.
 - Node.js and Express for the API and streamed responses
 - Prisma with PostgreSQL for users, sessions, messages, and token usage
 - JWT authentication stored in HTTP-only cookies
-- An OpenAI-compatible streaming model provider
+- OpenAI-compatible streaming through direct DeepSeek and OpenRouter
 
 ## Run locally
 
@@ -36,12 +36,27 @@ pnpm exec prisma db push
 pnpm dev
 ```
 
+Add both provider keys to `app/api/.env` before starting the API:
+
+```dotenv
+DEEPSEEK_API_KEY=your_deepseek_api_key
+OPENROUTER_API_KEY=your_openrouter_api_key
+```
+
+DeepSeek V4 Pro and Flash go directly to `api.deepseek.com`. The remaining
+models use OpenRouter. Custom compatible endpoints can be supplied with
+`DEEPSEEK_API_URL` and `OPENROUTER_API_URL` when needed.
+
+Reasoning is disabled by default for both providers to avoid extra output-token
+costs. Models that require reasoning are not included in the selectable catalog.
+
 Start the frontend in another terminal:
 
 ```bash
 cd app/web
 pnpm install
 npm run dev -- --host 0.0.0.0
+```
 
 ## Updating the models
 
