@@ -118,3 +118,26 @@
     @apply bg-background text-foreground;
   }
 }
+
+.subtle-scrollbar {
+  scrollbar-color: rgb(113 113 122 / 28%) transparent;
+  scrollbar-width: thin;
+}
+
+.subtle-scrollbar::-webkit-scrollbar {
+  height: 7px;
+  width: 7px;
+}
+
+.subtle-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.subtle-scrollbar::-webkit-scrollbar-thumb {
+  background: rgb(113 113 122 / 24%);
+  border-radius: 999px;
+}
+
+.subtle-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgb(113 113 122 / 42%);
+}

@@ -1,22 +1,30 @@
-
+/* eslint-disable react-refresh/only-export-components -- Zustand stores are not React components. */
 import { create } from "zustand";
 
-interface User {
+export interface CurrentUser {
   id: string;
-  name: string;
+  fullname: string;
   email: string;
+  avatar: string | null;
+  provider: string;
 }
 
 interface UserStore {
-  currentUser: User | null;
-  setCurrentUser: (user: User) => void;
+  authInitialized: boolean;
+  currentUser: CurrentUser | null;
+  setCurrentUser: (user: CurrentUser) => void;
   clearCurrentUser: () => void;
 }
 
+export const CURRENT_USER_QUERY_KEY = ["current-user"] as const;
+
 const useUserStore = create<UserStore>((set) => ({
+  authInitialized: false,
   currentUser: null,
-  setCurrentUser: (user) => set({ currentUser: user }),
-  clearCurrentUser: () => set({ currentUser: null }),
+  setCurrentUser: (user) =>
+    set({ authInitialized: true, currentUser: user }),
+  clearCurrentUser: () =>
+    set({ authInitialized: true, currentUser: null }),
 }));
 
 export default useUserStore;

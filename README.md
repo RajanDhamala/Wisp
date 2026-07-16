@@ -41,13 +41,12 @@ Start the frontend in another terminal:
 ```bash
 cd app/web
 pnpm install
-pnpm dev
-```
+npm run dev -- --host 0.0.0.0
 
 ## Updating the models
 
 The available models and the fallback model live in one place:
 `app/api/src/Config/Models.js`. To add, rename, or remove a model, update that
 catalog and restart the API. The frontend reads the catalog from
-`GET /api/session/models`, so there is no database migration and no frontend
+`GET /session/models`, so there is no database migration and no frontend
 rebuild for a model-list change.
