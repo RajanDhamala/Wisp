@@ -40,6 +40,7 @@ import {
   type KeyboardEvent,
   type ReactNode,
   lazy,
+  memo,
   Suspense,
   useEffect,
   useMemo,
@@ -344,13 +345,28 @@ type ModelCatalog = {
 const MAX_ATTACHMENT_COUNT = 5;
 const MAX_ATTACHMENT_BYTES = 150_000;
 const MAX_TOTAL_ATTACHMENT_CHARACTERS = 200_000;
+const MAX_EVENT_STREAM_BLOCK_CHARACTERS = 1_000_000;
+const STREAM_TOKEN_FLUSH_MS = 40;
+const MAX_PREVIEW_PATH_SEGMENTS = 12;
+const MAX_PREVIEW_PATH_SEGMENT_CHARACTERS = 80;
+const APPROVED_PREVIEW_DEPENDENCIES: Readonly<Record<string, string>> =
+  Object.freeze({
+    "lucide-react": "1.14.0",
+  });
+const SENSITIVE_ATTACHMENT_NAMES = [
+  /^\.env(?:\.|$)/i,
+  /^\.netrc$/i,
+  /^\.npmrc$/i,
+  /^id_(?:rsa|dsa|ecdsa|ed25519)(?:\.|$)/i,
+  /(?:^|[-_.])credentials?(?:[-_.]|$)/i,
+  /\.(?:key|p12|pem|pfx)$/i,
+];
 const TEXT_FILE_EXTENSIONS = new Set([
   "bash",
   "c",
   "cpp",
   "css",
   "csv",
-  "env",
   "go",
   "h",
   "html",
@@ -495,6 +511,9 @@ const isSupportedTextFile = (file: File) => {
   return file.type.startsWith("text/") || TEXT_FILE_EXTENSIONS.has(extension);
 };
 
+const isSensitiveAttachment = (file: File) =>
+  SENSITIVE_ATTACHMENT_NAMES.some((pattern) => pattern.test(file.name));
+
 const formatFileSize = (bytes: number) =>
   bytes < 1_000 ? `${bytes} B` : `${Math.ceil(bytes / 1_000)} KB`;
 
@@ -551,6 +570,10 @@ const consumeEventStream = async (
   let buffer = "";
 
   const consumeBlock = (block: string) => {
+    if (block.length > MAX_EVENT_STREAM_BLOCK_CHARACTERS) {
+      throw new Error("The server returned an oversized stream event");
+    }
+
     let event = "message";
     const dataLines: string[] = [];
 
@@ -563,19 +586,35 @@ const consumeEventStream = async (
     onEvent(event, JSON.parse(dataLines.join("\n")));
   };
 
-  while (true) {
-    const { done, value } = await reader.read();
-    buffer += decoder.decode(value, { stream: !done });
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      buffer += decoder.decode(value, { stream: !done });
 
-    const blocks = buffer.split(/\r?\n\r?\n/);
-    buffer = blocks.pop() ?? "";
-    blocks.forEach(consumeBlock);
+      const blocks = buffer.split(/\r?\n\r?\n/);
+      buffer = blocks.pop() ?? "";
+      if (buffer.length > MAX_EVENT_STREAM_BLOCK_CHARACTERS) {
+        throw new Error("The server returned an oversized stream event");
+      }
+      blocks.forEach(consumeBlock);
 
-    if (done) {
-      if (buffer.trim()) consumeBlock(buffer);
-      break;
+      if (done) {
+        if (buffer.trim()) consumeBlock(buffer);
+        break;
+      }
     }
+  } catch (error) {
+    await reader.cancel().catch(() => undefined);
+    throw error;
+  } finally {
+    reader.releaseLock();
   }
+};
+
+const getEventString = (data: unknown, key: string) => {
+  if (!data || typeof data !== "object" || Array.isArray(data)) return undefined;
+  const value = (data as Record<string, unknown>)[key];
+  return typeof value === "string" ? value : undefined;
 };
 
 type ContentPart = {
@@ -690,6 +729,13 @@ const parseMessageContent = (content: string): ContentPart[] => {
   return parts;
 };
 
+const sanitizePreviewPathSegment = (segment: string) =>
+  segment
+    .normalize("NFKC")
+    .replace(/[^A-Za-z0-9._@()+-]/g, "-")
+    .replace(/-{2,}/g, "-")
+    .slice(0, MAX_PREVIEW_PATH_SEGMENT_CHARACTERS);
+
 const normalizePreviewPath = (path: string) => {
   const cleaned = path
     .trim()
@@ -699,6 +745,9 @@ const normalizePreviewPath = (path: string) => {
     .replace(/^\/+/, "")
     .split("/")
     .filter((segment) => segment && segment !== "." && segment !== "..")
+    .slice(0, MAX_PREVIEW_PATH_SEGMENTS)
+    .map(sanitizePreviewPathSegment)
+    .filter(Boolean)
     .join("/");
   return `/${cleaned || "generated.tsx"}`;
 };
@@ -746,7 +795,7 @@ const isRunnableComponent = (part: ContentPart) => {
 };
 
 const collectDeclaredDependencies = (parts: ContentPart[]) => {
-  const dependencies: Record<string, string> = {};
+  const dependencies = Object.create(null) as Record<string, string>;
 
   for (const part of parts) {
     if (
@@ -758,14 +807,25 @@ const collectDeclaredDependencies = (parts: ContentPart[]) => {
 
     try {
       const packageJson = JSON.parse(part.content) as {
-        dependencies?: Record<string, string>;
-        devDependencies?: Record<string, string>;
+        dependencies?: unknown;
+        devDependencies?: unknown;
       };
-      Object.assign(
-        dependencies,
+      const declaredNames = [
         packageJson.devDependencies,
         packageJson.dependencies,
+      ].flatMap((value) =>
+        value && typeof value === "object" && !Array.isArray(value)
+          ? Object.keys(value)
+          : [],
       );
+      for (const packageName of declaredNames) {
+        if (
+          Object.hasOwn(APPROVED_PREVIEW_DEPENDENCIES, packageName)
+        ) {
+          dependencies[packageName] =
+            APPROVED_PREVIEW_DEPENDENCIES[packageName];
+        }
+      }
     } catch {
       // Invalid package manifests are still shown in chat, but cannot configure the preview.
     }
@@ -778,8 +838,10 @@ const collectRuntimeDependencies = (
   files: Record<string, string>,
   declaredDependencies: Record<string, string>,
 ) => {
-  const dependencies: Record<string, string> = { ...declaredDependencies };
-  const builtInPackages = new Set(["react", "react-dom", "react/jsx-runtime"]);
+  const dependencies = Object.assign(
+    Object.create(null) as Record<string, string>,
+    declaredDependencies,
+  );
   const importPattern = /(?:from\s+|import\s*)["']([^"']+)["']/g;
 
   for (const content of Object.values(files)) {
@@ -791,8 +853,9 @@ const collectRuntimeDependencies = (
       const packageName = specifier.startsWith("@")
         ? specifier.split("/").slice(0, 2).join("/")
         : specifier.split("/")[0];
-      if (!builtInPackages.has(packageName))
-        dependencies[packageName] = "latest";
+      if (Object.hasOwn(APPROVED_PREVIEW_DEPENDENCIES, packageName)) {
+        dependencies[packageName] = APPROVED_PREVIEW_DEPENDENCIES[packageName];
+      }
     }
   }
 
@@ -873,7 +936,7 @@ const getCssImportPaths = (files: Record<string, string>) =>
   Object.keys(files).filter((path) => /\.(?:css|less|scss)$/i.test(path));
 
 const TAILWIND_PLAY_CDN_URL =
-  "https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4/dist/index.global.js";
+  "https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.3.0/dist/index.global.js";
 
 const TAILWIND_ASYNC_LOADER = [
   'if (!document.querySelector("script[data-wisp-tailwind]")) {',
@@ -955,15 +1018,27 @@ const injectStaticResources = (
   html: string,
   files: Record<string, string>,
 ) => {
+  const escapeHtmlAttribute = (value: string) =>
+    value
+      .replaceAll("&", "&amp;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;");
   const styleTags = Object.keys(files)
     .filter((path) => /\.css$/i.test(path))
     .filter((path) => !html.includes(path) && !html.includes(path.slice(1)))
-    .map((path) => `<link rel="stylesheet" href="${path}" />`)
+    .map(
+      (path) =>
+        `<link rel="stylesheet" href="${escapeHtmlAttribute(path)}" />`,
+    )
     .join("\n");
   const scriptTags = Object.keys(files)
     .filter((path) => /\.(?:js|mjs)$/i.test(path))
     .filter((path) => !html.includes(path) && !html.includes(path.slice(1)))
-    .map((path) => `<script type="module" src="${path}"></script>`)
+    .map(
+      (path) =>
+        `<script type="module" src="${escapeHtmlAttribute(path)}"></script>`,
+    )
     .join("\n");
   const headTags = [
     `<script async data-wisp-tailwind src="${TAILWIND_PLAY_CDN_URL}"></script>`,
@@ -1146,7 +1221,7 @@ const HighlightedCode = ({
     <div
       className={`subtle-scrollbar ${constrainHeight ? "max-h-96 overflow-auto" : "overflow-x-auto"} bg-zinc-950 text-[13px] leading-6`}
     >
-      {filePath ? (
+      {filePath && part.complete !== false ? (
         <Suspense fallback={<PlainCode code={part.content} />}>
           <SandpackHighlightedCode
             code={part.content}
@@ -1825,8 +1900,24 @@ const getUserInitials = (fullname?: string) =>
     .map((part) => part[0]?.toUpperCase())
     .join("") || "U";
 
+const getSafeAvatarUrl = (avatar?: string | null) => {
+  if (!avatar || typeof window === "undefined") return null;
+
+  try {
+    const url = new URL(avatar, window.location.origin);
+    if (url.protocol === "https:" || url.origin === window.location.origin) {
+      return url.href;
+    }
+  } catch {
+    // Invalid or unsafe avatar URLs fall back to user initials.
+  }
+
+  return null;
+};
+
 const CollapsedProfile = () => {
   const currentUser = useUserStore((state) => state.currentUser);
+  const avatarUrl = getSafeAvatarUrl(currentUser?.avatar);
 
   return (
     <button
@@ -1834,12 +1925,14 @@ const CollapsedProfile = () => {
       title={currentUser?.fullname || "Account"}
       type="button"
     >
-      {currentUser?.avatar ? (
+      {avatarUrl ? (
         <img
           alt=""
           className="size-8 rounded-full object-cover"
+          decoding="async"
+          loading="lazy"
           referrerPolicy="no-referrer"
-          src={currentUser.avatar}
+          src={avatarUrl}
         />
       ) : (
         <span className="flex size-8 items-center justify-center rounded-full bg-zinc-800 text-xs font-semibold text-white dark:bg-zinc-200 dark:text-zinc-900">
@@ -1862,6 +1955,7 @@ const ProfileMenu = ({
   const queryClient = useQueryClient();
   const clearCurrentUser = useUserStore((state) => state.clearCurrentUser);
   const currentUser = useUserStore((state) => state.currentUser);
+  const avatarUrl = getSafeAvatarUrl(currentUser?.avatar);
   const initials = getUserInitials(currentUser?.fullname);
   const logoutMutation = useMutation<null, Error>({
     mutationKey: ["user", "logout"],
@@ -1923,12 +2017,14 @@ const ProfileMenu = ({
         onClick={() => setOpen((value) => !value)}
         type="button"
       >
-        {currentUser?.avatar ? (
+        {avatarUrl ? (
           <img
             alt=""
             className="size-8 shrink-0 rounded-full object-cover"
+            decoding="async"
+            loading="lazy"
             referrerPolicy="no-referrer"
-            src={currentUser.avatar}
+            src={avatarUrl}
           />
         ) : (
           <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-zinc-800 text-xs font-semibold text-white dark:bg-zinc-200 dark:text-zinc-900">
@@ -2121,7 +2217,7 @@ const Sidebar = ({
   </>
 );
 
-const MessageBubble = ({
+const MessageBubble = memo(function MessageBubble({
   constrainCodeHeight = true,
   hideAvatar = false,
   message,
@@ -2133,7 +2229,7 @@ const MessageBubble = ({
   message: Message;
   streaming?: boolean;
   theme: "light" | "dark";
-}) => {
+}) {
   const [copied, setCopied] = useState(false);
 
   const copyMessage = async () => {
@@ -2204,7 +2300,7 @@ const MessageBubble = ({
       )}
     </div>
   );
-};
+});
 
 const BranchResponseCard = ({
   fullscreen = false,
@@ -3021,7 +3117,7 @@ const Composer = ({
               <GitBranch className="size-[18px]" />
             </button>
             <input
-              accept="text/*,.bash,.c,.cpp,.css,.csv,.env,.go,.h,.html,.java,.js,.json,.jsx,.less,.md,.mjs,.py,.scss,.sh,.sql,.svg,.toml,.ts,.tsx,.txt,.xml,.yaml,.yml,.zsh"
+              accept="text/*,.bash,.c,.cpp,.css,.csv,.go,.h,.html,.java,.js,.json,.jsx,.less,.md,.mjs,.py,.scss,.sh,.sql,.svg,.toml,.ts,.tsx,.txt,.xml,.yaml,.yml,.zsh"
               className="hidden"
               disabled={sending}
               multiple
@@ -3419,6 +3515,38 @@ const ChatPage = () => {
       const getPendingAssistantId = (modelId?: string) =>
         (modelId ? temporaryAssistantIds[modelId] : undefined) ??
         fallbackAssistantId;
+      const pendingTokens = new Map<string, string>();
+      let tokenFlushTimer: number | null = null;
+      const flushPendingTokens = () => {
+        if (tokenFlushTimer !== null) {
+          window.clearTimeout(tokenFlushTimer);
+          tokenFlushTimer = null;
+        }
+        if (!pendingTokens.size) return;
+
+        const tokenUpdates = new Map(pendingTokens);
+        pendingTokens.clear();
+        updateSessionMessages(sessionId, (messages) =>
+          messages.map((message) => {
+            const tokenChunk = tokenUpdates.get(message.id);
+            return tokenChunk
+              ? { ...message, content: message.content + tokenChunk }
+              : message;
+          }),
+        );
+      };
+      const queueToken = (messageId: string, token: string) => {
+        pendingTokens.set(
+          messageId,
+          `${pendingTokens.get(messageId) ?? ""}${token}`,
+        );
+        if (tokenFlushTimer === null) {
+          tokenFlushTimer = window.setTimeout(
+            flushPendingTokens,
+            STREAM_TOKEN_FLUSH_MS,
+          );
+        }
+      };
       const response = await fetch(
         `${API_BASE_URL}/session/${encodeURIComponent(sessionId)}/messages`,
         {
@@ -3443,126 +3571,132 @@ const ChatPage = () => {
         throw new Error(await readResponseError(response));
       }
 
-      await consumeEventStream(response, (event, data) => {
-        if (event === "model_fallback") {
-          const payload = data as ModelFallbackEvent;
-          setSelectedModel((current) => {
-            if (current !== payload.requestedModel) return current;
-            window.localStorage.setItem("wisp-selected-model", payload.model);
-            return payload.model;
-          });
-          toast(payload.message, {
-            icon: "↪",
-            id: `model-fallback-${sessionId}`,
-          });
-        }
-
-        if (event === "message") {
-          const payload = data as StreamMessageEvent;
-          const savedUserMessage = normalizeMessage(payload.userMessage);
-          updateSessionMessages(sessionId, (messages) =>
-            messages.map((message) =>
-              message.id === temporaryUserId ? savedUserMessage : message,
-            ),
-          );
-        }
-
-        if (event === "token") {
-          const payload = data as { model?: string; token?: string };
-          const token = payload.token ?? "";
-          const pendingId = getPendingAssistantId(payload.model);
-          updateSessionMessages(sessionId, (messages) =>
-            messages.map((message) =>
-              message.id === pendingId
-                ? { ...message, content: message.content + token }
-                : message,
-            ),
-          );
-        }
-
-        if (event === "branch_complete") {
-          const pendingId = getPendingAssistantId(
-            (data as { model?: string }).model,
-          );
-          setStreamingMessageIds((current) =>
-            current.filter((id) => id !== pendingId),
-          );
-        }
-
-        if (event === "branch_error") {
-          const payload = data as { message?: string; model?: string };
-          const pendingId = getPendingAssistantId(payload.model);
-          updateSessionMessages(sessionId, (messages) =>
-            messages.map((message) =>
-              message.id === pendingId
-                ? {
-                    ...message,
-                    content: `I couldn't complete this response. ${
-                      payload.message || "This model failed to respond."
-                    }`,
-                  }
-                : message,
-            ),
-          );
-          setStreamingMessageIds((current) =>
-            current.filter((id) => id !== pendingId),
-          );
-        }
-
-        if (event === "done") {
-          const payload = data as StreamDoneEvent;
-          const assistantMessages = (
-            payload.messages ?? (payload.message ? [payload.message] : [])
-          ).map(normalizeMessage);
-          if (!assistantMessages.length) {
-            throw new Error("The server completed without model responses");
+      try {
+        await consumeEventStream(response, (event, data) => {
+          if (event === "model_fallback") {
+            const payload = data as ModelFallbackEvent;
+            setSelectedModel((current) => {
+              if (current !== payload.requestedModel) return current;
+              window.localStorage.setItem("wisp-selected-model", payload.model);
+              return payload.model;
+            });
+            toast(payload.message, {
+              icon: "↪",
+              id: `model-fallback-${sessionId}`,
+            });
           }
-          const pendingIds = new Set(pendingAssistantIds);
-          completedPayload = payload;
-          queryClient.setQueryData<Chat>(
-            sessionQueryKeys.detail(sessionId),
-            (chat) =>
-              chat
-                ? (() => {
-                    let responseIndex = 0;
-                    return {
-                      ...chat,
-                      activeGeneration: null,
-                      title: payload.session.title,
-                      updatedAt: payload.session.updatedAt,
-                      group: groupSession(payload.session.updatedAt),
-                      messages: chat.messages.map((message) =>
-                        pendingIds.has(message.id)
-                          ? (assistantMessages[responseIndex++] ?? message)
-                          : message,
-                      ),
-                    };
-                  })()
-                : chat,
-          );
-          queryClient.setQueryData<Chat[]>(
-            sessionQueryKeys.all,
-            (current = []) =>
-              sortSessions(
-                current.map((chat) =>
-                  chat.id === sessionId
-                    ? {
+
+          if (event === "message") {
+            const payload = data as StreamMessageEvent;
+            const savedUserMessage = normalizeMessage(payload.userMessage);
+            updateSessionMessages(sessionId, (messages) =>
+              messages.map((message) =>
+                message.id === temporaryUserId ? savedUserMessage : message,
+              ),
+            );
+          }
+
+          if (event === "token") {
+            const token = getEventString(data, "token") ?? "";
+            const pendingId = getPendingAssistantId(
+              getEventString(data, "model"),
+            );
+            if (pendingId && token) queueToken(pendingId, token);
+          }
+
+          if (event === "branch_complete") {
+            flushPendingTokens();
+            const pendingId = getPendingAssistantId(
+              getEventString(data, "model"),
+            );
+            setStreamingMessageIds((current) =>
+              current.filter((id) => id !== pendingId),
+            );
+          }
+
+          if (event === "branch_error") {
+            flushPendingTokens();
+            const pendingId = getPendingAssistantId(
+              getEventString(data, "model"),
+            );
+            const failureMessage =
+              getEventString(data, "message") ||
+              "This model failed to respond.";
+            updateSessionMessages(sessionId, (messages) =>
+              messages.map((message) =>
+                message.id === pendingId
+                  ? {
+                      ...message,
+                      content: `I couldn't complete this response. ${failureMessage}`,
+                    }
+                  : message,
+              ),
+            );
+            setStreamingMessageIds((current) =>
+              current.filter((id) => id !== pendingId),
+            );
+          }
+
+          if (event === "done") {
+            flushPendingTokens();
+            const payload = data as StreamDoneEvent;
+            const assistantMessages = (
+              payload.messages ?? (payload.message ? [payload.message] : [])
+            ).map(normalizeMessage);
+            if (!assistantMessages.length) {
+              throw new Error("The server completed without model responses");
+            }
+            const pendingIds = new Set(pendingAssistantIds);
+            completedPayload = payload;
+            queryClient.setQueryData<Chat>(
+              sessionQueryKeys.detail(sessionId),
+              (chat) =>
+                chat
+                  ? (() => {
+                      let responseIndex = 0;
+                      return {
                         ...chat,
+                        activeGeneration: null,
                         title: payload.session.title,
                         updatedAt: payload.session.updatedAt,
                         group: groupSession(payload.session.updatedAt),
-                      }
-                    : chat,
+                        messages: chat.messages.map((message) =>
+                          pendingIds.has(message.id)
+                            ? (assistantMessages[responseIndex++] ?? message)
+                            : message,
+                        ),
+                      };
+                    })()
+                  : chat,
+            );
+            queryClient.setQueryData<Chat[]>(
+              sessionQueryKeys.all,
+              (current = []) =>
+                sortSessions(
+                  current.map((chat) =>
+                    chat.id === sessionId
+                      ? {
+                          ...chat,
+                          title: payload.session.title,
+                          updatedAt: payload.session.updatedAt,
+                          group: groupSession(payload.session.updatedAt),
+                        }
+                      : chat,
+                  ),
                 ),
-              ),
-          );
-        }
+            );
+          }
 
-        if (event === "error") {
-          const message = (data as { message?: string }).message;
-          throw new Error(message || "The message stream failed");
-        }
-      });
+          if (event === "error") {
+            flushPendingTokens();
+            throw new Error(
+              getEventString(data, "message") || "The message stream failed",
+            );
+          }
+        });
+      } finally {
+        flushPendingTokens();
+      }
 
       if (!completedPayload) {
         throw new Error("The message stream ended before completion");
@@ -3981,6 +4115,12 @@ const ChatPage = () => {
 
     const extracted: PendingAttachment[] = [];
     for (const file of acceptedFiles) {
+      if (isSensitiveAttachment(file)) {
+        setPageError(
+          `${file.name} may contain credentials and cannot be attached.`,
+        );
+        continue;
+      }
       if (!isSupportedTextFile(file)) {
         setPageError(`${file.name} is not a supported text or code file.`);
         continue;

@@ -6,14 +6,26 @@ import ApiResponse from "../Utils/ApiResponse.js";
 import prisma from "../Utils/PrismaProvider.js";
 import {
   FALLBACK_MODEL,
+  getModelProvider,
   MODEL_CATALOG,
   MODEL_PROVIDER,
   resolveModel,
 } from "../Config/Models.js";
 
-const PROVIDER_URL =
-  process.env.PROVIDER_URL ??
-  "https://opencode.ai/zen/go/v1/chat/completions";
+const PROVIDERS = Object.freeze({
+  deepseek: Object.freeze({
+    apiKeyEnv: "DEEPSEEK_API_KEY",
+    defaultUrl: "https://api.deepseek.com/chat/completions",
+    label: "DeepSeek",
+    urlEnv: "DEEPSEEK_API_URL",
+  }),
+  openrouter: Object.freeze({
+    apiKeyEnv: "OPENROUTER_API_KEY",
+    defaultUrl: "https://openrouter.ai/api/v1/chat/completions",
+    label: "OpenRouter",
+    urlEnv: "OPENROUTER_API_URL",
+  }),
+});
 const MAX_CONTEXT_MESSAGES = 40;
 const MAX_ATTACHMENT_CHARACTERS = 200_000;
 const ACTIVE_GENERATION_TTL_MS = 30 * 60 * 1_000;
@@ -130,14 +142,24 @@ const parseBody = (schema, body) => {
   return result.data;
 };
 
-const getProviderSecret = () => {
-  const secret = process.env.PROVIDER_SECRET ?? process.env.ProviderSecret;
+const getProviderConfig = (modelId) => {
+  const providerId = getModelProvider(modelId);
+  const provider = PROVIDERS[providerId];
+  const apiKey = process.env[provider.apiKeyEnv]?.trim();
 
-  if (!secret) {
-    throw new ApiError(500, "Provider secret is not configured");
+  if (!apiKey) {
+    throw new ApiError(
+      500,
+      `${provider.label} API key is not configured (${provider.apiKeyEnv})`,
+    );
   }
 
-  return secret;
+  return {
+    apiKey,
+    id: providerId,
+    label: provider.label,
+    url: process.env[provider.urlEnv]?.trim() || provider.defaultUrl,
+  };
 };
 
 const findOwnedSession = async (sessionId, ownerId, options = {}) => {
@@ -248,6 +270,7 @@ const normalizeUsage = (usage = {}) => {
   const inputTokens = usage.prompt_tokens ?? usage.input_tokens ?? 0;
   const outputTokens = usage.completion_tokens ?? usage.output_tokens ?? 0;
   const cachedInputTokens =
+    usage.prompt_cache_hit_tokens ??
     usage.prompt_tokens_details?.cached_tokens ??
     usage.input_tokens_details?.cached_tokens ??
     usage.cache_read_input_tokens ??
@@ -279,6 +302,25 @@ const startEventStream = (res) => {
 const isUnsupportedModelResponse = (status, body) =>
   [400, 401, 404].includes(status) &&
   /(ModelError|model[^\n]*not supported|unsupported model)/i.test(body);
+
+const getProviderFailureMessage = (model, status, body) => {
+  if (isUnsupportedModelResponse(status, body)) {
+    return `Model ${model} is unavailable.`;
+  }
+  if (status === 402) {
+    return "The model provider has insufficient credits.";
+  }
+  if (status === 429) {
+    return "The model provider rate limit was reached. Please try again later.";
+  }
+  if ([401, 403].includes(status)) {
+    return "The model provider rejected the configured API credentials.";
+  }
+  if (status >= 500) {
+    return "The model provider is temporarily unavailable. Please try again later.";
+  }
+  return `The provider rejected ${model}. Please try again.`;
+};
 
 const persistGenerationFailure = async (sessionId, model, message) => {
   try {
@@ -499,8 +541,9 @@ const CreateMessage = asyncHandler(async (req, res) => {
     throw new ApiError(400, "Choose at least two different models");
   }
   const selectedModel = selectedModels[0];
+  const usedCatalogFallback =
+    !models && typeof model === "string" && model !== selectedModel;
   const session = await findOwnedSession(req.params.sessionId, req.user.id);
-  const providerSecret = getProviderSecret();
   const activeGeneration = beginActiveGeneration(session.id, selectedModels);
   if (!activeGeneration) {
     throw new ApiError(409, "This session already has a response in progress");
@@ -539,20 +582,26 @@ const CreateMessage = asyncHandler(async (req, res) => {
     { role: "system", content: SYSTEM_PROMPT },
     ...selectContextForModel(orderedContext, modelId, providerUserContent),
   ];
-  const requestProvider = (modelId) =>
-    fetch(PROVIDER_URL, {
+  const requestProvider = (modelId) => {
+    const provider = getProviderConfig(modelId);
+
+    return fetch(provider.url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${providerSecret}`,
+        Authorization: `Bearer ${provider.apiKey}`,
       },
       body: JSON.stringify({
         model: modelId,
         messages: buildProviderMessages(modelId),
+        ...(provider.id === "deepseek"
+          ? { thinking: { type: "disabled" } }
+          : { reasoning: { effort: "none" } }),
         stream: true,
         stream_options: { include_usage: true },
       }),
     });
+  };
 
   if (selectedModels.length > 1) {
     startEventStream(res);
@@ -573,12 +622,11 @@ const CreateMessage = asyncHandler(async (req, res) => {
           : await providerResponse.text();
 
         if (!providerResponse.ok) {
-          const failureMessage = isUnsupportedModelResponse(
+          const failureMessage = getProviderFailureMessage(
+            branchModel,
             providerResponse.status,
             providerError,
-          )
-            ? `Model ${branchModel} is unavailable.`
-            : `The provider rejected ${branchModel}. Please try again.`;
+          );
           console.error(
             "Branch provider request failed",
             branchModel,
@@ -684,22 +732,10 @@ const CreateMessage = asyncHandler(async (req, res) => {
   let providerModel = selectedModel;
   let providerResponse;
   let providerError = "";
-  let fallbackNotice = null;
 
   try {
     providerResponse = await requestProvider(providerModel);
     providerError = providerResponse.ok ? "" : await providerResponse.text();
-
-    if (
-      !providerResponse.ok &&
-      providerModel !== FALLBACK_MODEL &&
-      isUnsupportedModelResponse(providerResponse.status, providerError)
-    ) {
-      fallbackNotice = `${providerModel} is unavailable. Switched to ${FALLBACK_MODEL}.`;
-      providerModel = FALLBACK_MODEL;
-      providerResponse = await requestProvider(providerModel);
-      providerError = providerResponse.ok ? "" : await providerResponse.text();
-    }
   } catch (error) {
     console.error("Provider request could not be completed", error);
     const failureMessage =
@@ -710,12 +746,11 @@ const CreateMessage = asyncHandler(async (req, res) => {
   }
 
   if (!providerResponse.ok) {
-    const failureMessage = isUnsupportedModelResponse(
+    const failureMessage = getProviderFailureMessage(
+      providerModel,
       providerResponse.status,
       providerError,
-    )
-      ? `Model ${providerModel} is unavailable. Choose another model and try again.`
-      : "The model provider rejected the request. Please try again.";
+    );
     console.error(
       "Provider request failed",
       providerResponse.status,
@@ -728,11 +763,11 @@ const CreateMessage = asyncHandler(async (req, res) => {
 
   startEventStream(res);
 
-  if (fallbackNotice) {
+  if (usedCatalogFallback) {
     writeEvent(res, "model_fallback", {
-      message: fallbackNotice,
+      message: `${model} is not in the model catalog. Switched to ${FALLBACK_MODEL}.`,
       model: providerModel,
-      requestedModel: selectedModel,
+      requestedModel: model,
     });
   }
 
