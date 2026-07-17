@@ -1,7 +1,6 @@
 import { type ReactNode, Suspense, useEffect } from "react";
 import "./index.css";
 import {
-  LazyLandingPage,
   LazySessionPage,
   LazyLoginPage,
   LazyTestPage,
@@ -21,6 +20,7 @@ import useUserStore, {
   type CurrentUser,
 } from "./UserStore.tsx";
 import { API_BASE_URL } from "./Utils/ApiConfig.ts";
+import LandingPage from "./Pages/LandingPage.tsx";
 
 type ApiEnvelope<T> = {
   data: T;
@@ -105,7 +105,7 @@ function App() {
       <Router>
         <Suspense fallback={<Loader />}>
           <Routes>
-            <Route path="/" element={<LazyLandingPage />} />
+            <Route path="/" element={<LandingPage />} />
             <Route path="/login" element={<LazyLoginPage />} />
             <Route path="/register" element={<Navigate replace to="/login" />} />
             <Route path="/callback" element={<LazyTestPage />} />

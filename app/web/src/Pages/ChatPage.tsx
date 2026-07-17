@@ -50,9 +50,11 @@ import {
 import { useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
+import claudeLogo from "@lobehub/icons-static-svg/icons/claude-color.svg";
 import deepSeekLogo from "@lobehub/icons-static-svg/icons/deepseek-color.svg";
 import kimiLogo from "@lobehub/icons-static-svg/icons/kimi.svg";
 import minimaxLogo from "@lobehub/icons-static-svg/icons/minimax-color.svg";
+import openAiLogo from "@lobehub/icons-static-svg/icons/openai.svg";
 import qwenLogo from "@lobehub/icons-static-svg/icons/qwen-color.svg";
 import xiaomiMimoLogo from "@lobehub/icons-static-svg/icons/xiaomimimo.svg";
 import zaiLogo from "@lobehub/icons-static-svg/icons/zai.svg";
@@ -60,6 +62,7 @@ import useUserStore, {
   CURRENT_USER_QUERY_KEY,
 } from "../UserStore";
 import { API_BASE_URL } from "../Utils/ApiConfig";
+import { LANDING_DRAFT_STORAGE_KEY } from "../Utils/LandingDraft";
 import {
   getSandpackBundlerUrl,
   SANDPACK_BUNDLER_TIMEOUT_MS,
@@ -332,8 +335,11 @@ type PendingAttachment = {
 };
 
 type ModelOption = {
+  capability?: string;
+  family?: string;
   id: string;
   label: string;
+  provider?: "deepseek" | "openrouter";
 };
 
 type ModelCatalog = {
@@ -419,6 +425,10 @@ const MODEL_LOGOS: ReadonlyArray<{
   match: string;
   src: string;
 }> = [
+  { match: "anthropic", src: claudeLogo },
+  { match: "claude", src: claudeLogo },
+  { match: "openai", src: openAiLogo, invertInDark: true },
+  { match: "gpt", src: openAiLogo, invertInDark: true },
   { match: "deepseek", src: deepSeekLogo },
   { match: "minimax", src: minimaxLogo },
   { match: "qwen", src: qwenLogo },
@@ -3193,7 +3203,11 @@ const ChatPage = () => {
   const queryClient = useQueryClient();
   const { id: activeChatId } = useParams<{ id?: string }>();
   const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
-  const [composerValue, setComposerValue] = useState("");
+  const [composerValue, setComposerValue] = useState(() =>
+    typeof window === "undefined"
+      ? ""
+      : (window.localStorage.getItem(LANDING_DRAFT_STORAGE_KEY) ?? ""),
+  );
   const [selectedModel, setSelectedModel] = useState(() =>
     typeof window === "undefined"
       ? ""
@@ -3230,6 +3244,7 @@ const ChatPage = () => {
   const [pageError, setPageError] = useState<string | null>(null);
   const chatScrollRef = useRef<HTMLDivElement>(null);
   const hydratedGenerationRef = useRef<string | null>(null);
+  const landingDraftConsumedRef = useRef(false);
   const shouldFollowStreamRef = useRef(true);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     if (typeof window === "undefined") return false;
@@ -3832,6 +3847,12 @@ const ChatPage = () => {
     document.documentElement.classList.toggle("dark", theme === "dark");
     window.localStorage.setItem("wisp-theme", theme);
   }, [theme]);
+
+  useEffect(() => {
+    if (landingDraftConsumedRef.current) return;
+    landingDraftConsumedRef.current = true;
+    window.localStorage.removeItem(LANDING_DRAFT_STORAGE_KEY);
+  }, []);
 
   useEffect(() => {
     if (!pageError) return;

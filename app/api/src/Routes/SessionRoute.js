@@ -12,11 +12,12 @@ import {
 
 const SessionRouter = Router();
 
+SessionRouter.get("/models", ListModels);
+
 SessionRouter.use(AuthUser);
 
 SessionRouter.route("/").get(ListSessions).post(CreateSession);
 
-SessionRouter.get("/models", ListModels);
 SessionRouter.post("/:sessionId/messages", CreateMessage);
 
 SessionRouter.route("/:sessionId")

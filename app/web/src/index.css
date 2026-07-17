@@ -111,11 +111,135 @@
 }
 
 @layer base {
+  html {
+    scroll-behavior: smooth;
+  }
   * {
     @apply border-border outline-ring/50;
   }
   body {
     @apply bg-background text-foreground;
+  }
+}
+
+@keyframes wisp-network-dash {
+  from { stroke-dashoffset: 0; }
+  to { stroke-dashoffset: -1; }
+}
+
+@keyframes wisp-network-spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes wisp-network-spin-reverse {
+  to { transform: rotate(-360deg); }
+}
+
+@keyframes wisp-model-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-9px); }
+}
+
+@keyframes wisp-preview-breathe {
+  0%, 100% { opacity: 0.7; transform: scale(0.96); }
+  50% { opacity: 1; transform: scale(1.04); }
+}
+
+@keyframes wisp-wheel-orbit {
+  to { stroke-dashoffset: -160; }
+}
+
+@keyframes wisp-wheel-spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes wisp-wheel-spin-reverse {
+  to { transform: rotate(-360deg); }
+}
+
+.wisp-network-path {
+  stroke-dasharray: 0.045 0.035;
+  animation: wisp-network-dash 3.6s linear infinite;
+}
+
+.wisp-network-ring,
+.wisp-network-ring-reverse {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.wisp-network-ring {
+  animation: wisp-network-spin 24s linear infinite;
+}
+
+.wisp-network-ring-reverse {
+  animation: wisp-network-spin-reverse 32s linear infinite;
+}
+
+.wisp-model-orb {
+  animation: wisp-model-float 6s ease-in-out infinite;
+}
+
+.wisp-float-slow {
+  animation: wisp-model-float 7s ease-in-out infinite;
+}
+
+.wisp-float-slower {
+  animation: wisp-model-float 8.5s ease-in-out -2s infinite;
+}
+
+.wisp-preview-glow {
+  animation: wisp-preview-breathe 8s ease-in-out infinite;
+}
+
+.wisp-model-wheel {
+  --wheel-radius: clamp(138px, 41vw, 285px);
+}
+
+.wisp-wheel-orbit-layer {
+  animation: wisp-wheel-spin 54s linear infinite;
+  transform-origin: center;
+}
+
+.wisp-wheel-ring {
+  animation: wisp-wheel-orbit 22s linear infinite;
+}
+
+.wisp-wheel-model {
+  transform: translate(-50%, -50%) rotate(var(--wheel-angle))
+    translateY(calc(var(--wheel-radius) * -1))
+    rotate(calc(var(--wheel-angle) * -1));
+}
+
+.wisp-wheel-model-face {
+  animation: wisp-wheel-spin-reverse 54s linear infinite;
+}
+
+.wisp-model-wheel.is-interacting .wisp-wheel-orbit-layer,
+.wisp-model-wheel.is-interacting .wisp-wheel-model-face {
+  animation-play-state: paused;
+}
+
+.wisp-wheel-model.is-highlighted {
+  z-index: 30;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  .wisp-network-path,
+  .wisp-network-ring,
+  .wisp-network-ring-reverse,
+  .wisp-model-orb,
+  .wisp-float-slow,
+  .wisp-float-slower,
+  .wisp-preview-glow,
+  .wisp-wheel-ring,
+  .wisp-wheel-orbit-layer,
+  .wisp-wheel-model-face {
+    animation: none;
   }
 }
 
