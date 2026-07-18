@@ -29,6 +29,8 @@ const PROVIDERS = Object.freeze({
 const MAX_CONTEXT_MESSAGES = 40;
 const MAX_ATTACHMENT_CHARACTERS = 200_000;
 const ACTIVE_GENERATION_TTL_MS = 30 * 60 * 1_000;
+const DEFAULT_SESSION_PAGE_SIZE = 20;
+const MAX_SESSION_PAGE_SIZE = 50;
 const activeGenerations = new Map();
 
 const getActiveGeneration = (sessionId) => {
@@ -103,6 +105,23 @@ const renameSessionSchema = z.object({
   title: z.string().trim().min(1).max(100),
 });
 
+const listSessionsQuerySchema = z.object({
+  cursor: z.string().trim().min(1).max(500).optional(),
+  limit: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(MAX_SESSION_PAGE_SIZE)
+    .default(DEFAULT_SESSION_PAGE_SIZE),
+  projectId: z.string().uuid().optional(),
+  search: z.string().trim().max(100).optional(),
+});
+
+const sessionCursorSchema = z.object({
+  id: z.string().uuid(),
+  updatedAt: z.string().datetime(),
+});
+
 const attachmentSchema = z.object({
   name: z.string().trim().min(1).max(255).regex(/^[^\r\n]+$/),
   type: z.string().trim().max(100).regex(/^[^\r\n]*$/).default("text/plain"),
@@ -140,6 +159,40 @@ const parseBody = (schema, body) => {
   }
 
   return result.data;
+};
+
+const parseQuery = (schema, query) => {
+  const result = schema.safeParse(query ?? {});
+
+  if (!result.success) {
+    throw new ApiError(400, "Invalid query parameters", result.error.issues);
+  }
+
+  return result.data;
+};
+
+const encodeSessionCursor = (session) =>
+  Buffer.from(
+    JSON.stringify({
+      id: session.id,
+      updatedAt: session.updatedAt.toISOString(),
+    }),
+    "utf8",
+  ).toString("base64url");
+
+const decodeSessionCursor = (cursor) => {
+  try {
+    const value = JSON.parse(
+      Buffer.from(cursor, "base64url").toString("utf8"),
+    );
+    const parsed = sessionCursorSchema.parse(value);
+    return {
+      id: parsed.id,
+      updatedAt: new Date(parsed.updatedAt),
+    };
+  } catch {
+    throw new ApiError(400, "Invalid session cursor");
+  }
 };
 
 const getProviderConfig = (modelId) => {
@@ -224,7 +277,8 @@ const SYSTEM_PROMPT = [
   "```",
   "Never output tsx file=/src/TestPage.tsx or another file header as a bare line without the opening triple backticks.",
   "Every runnable component file must use a default export. The component and filename may have any sensible name; the client creates the preview entry automatically.",
-  "Use React, Tailwind CSS utility classes, and lucide-react only; do not reference missing local assets or unsupported packages.",
+  "Use React and Tailwind CSS utility classes. Supported UI packages are lucide-react, motion (via motion/react), framer-motion, gsap, and @gsap/react; do not reference missing local assets or other unsupported packages.",
+  "The preview theme is isolated from Wisp. Generated apps must own their light/dark state; for dark mode, toggle a dark class inside the generated app and provide explicit light and dark page backgrounds instead of relying on the host theme.",
   "Put shell commands only inside complete bash fences: an opening ```bash line, the commands, and a closing ``` line. Commands are displayed for the user to copy and are never executed automatically.",
   "Never mix prose inside a named file fence. Normal explanation must stay outside code fences.",
   "Voice messages and image uploads are not supported.",
@@ -450,9 +504,34 @@ const CreateSession = asyncHandler(async (req, res) => {
 });
 
 const ListSessions = asyncHandler(async (req, res) => {
+  const { cursor: encodedCursor, limit, projectId, search } = parseQuery(
+    listSessionsQuerySchema,
+    req.query,
+  );
+  const cursor = encodedCursor
+    ? decodeSessionCursor(encodedCursor)
+    : null;
   const sessions = await prisma.sessions.findMany({
-    where: { owner: req.user.id },
-    orderBy: { updatedAt: "desc" },
+    where: {
+      owner: req.user.id,
+      ...(projectId ? { projectId } : {}),
+      ...(search
+        ? { title: { contains: search, mode: "insensitive" } }
+        : {}),
+      ...(cursor
+        ? {
+            OR: [
+              { updatedAt: { lt: cursor.updatedAt } },
+              {
+                updatedAt: cursor.updatedAt,
+                id: { lt: cursor.id },
+              },
+            ],
+          }
+        : {}),
+    },
+    orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
+    take: limit + 1,
     include: {
       _count: { select: { messages: true } },
       messages: {
@@ -463,15 +542,25 @@ const ListSessions = asyncHandler(async (req, res) => {
     },
   });
 
-  const data = sessions.map(({ messages, _count, ...session }) => ({
+  const hasNextPage = sessions.length > limit;
+  const page = sessions.slice(0, limit);
+  const items = page.map(({ messages, _count, ...session }) => ({
     ...session,
     messageCount: _count.messages,
     lastMessage: messages[0] ?? null,
   }));
+  const nextCursor = hasNextPage
+    ? encodeSessionCursor(page.at(-1))
+    : null;
 
   return res
     .status(200)
-    .json(new ApiResponse(200, "Sessions fetched", data));
+    .json(
+      new ApiResponse(200, "Sessions fetched", {
+        items,
+        nextCursor,
+      }),
+    );
 });
 
 const GetSession = asyncHandler(async (req, res) => {
@@ -517,6 +606,28 @@ const DeleteSession = asyncHandler(async (req, res) => {
   return res
     .status(200)
     .json(new ApiResponse(200, "Session deleted", { id: req.params.sessionId }));
+});
+
+const DeleteMessage = asyncHandler(async (req, res) => {
+  await findOwnedSession(req.params.sessionId, req.user.id);
+
+  const result = await prisma.messages.deleteMany({
+    where: {
+      id: req.params.messageId,
+      role: "ASSISTANT",
+      sessionId: req.params.sessionId,
+    },
+  });
+
+  if (!result.count) {
+    throw new ApiError(404, "Response not found");
+  }
+
+  return res.status(200).json(
+    new ApiResponse(200, "Response deleted", {
+      id: req.params.messageId,
+    }),
+  );
 });
 
 const ListModels = asyncHandler(async (_req, res) => {
@@ -837,6 +948,7 @@ export {
   GetSession,
   RenameSession,
   DeleteSession,
+  DeleteMessage,
   ListModels,
   CreateMessage,
 };

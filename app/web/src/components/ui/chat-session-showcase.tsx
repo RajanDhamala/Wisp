@@ -12,7 +12,6 @@ import {
   Plus,
   Search,
   Share2,
-  Sparkles,
   SquarePen,
   ThumbsDown,
   ThumbsUp,
@@ -29,57 +28,57 @@ const responses: Array<{
   latency: string;
   content: React.ReactNode;
 }> = [
-  {
-    model: MODEL_IDENTITIES.deepseek,
-    latency: "1.8s",
-    content: (
-      <>
-        <p className="font-medium text-zinc-100">Recommended architecture</p>
-        <p className="mt-2">
-          Use a shared request coordinator, then stream every provider independently into a normalized branch.
-        </p>
-        <div className="mt-4 rounded-lg border border-white/[0.07] bg-black/40 p-3 font-mono text-[10px] leading-5 text-zinc-400">
-          <p><span className="text-violet-400">const</span> results = await</p>
-          <p className="pl-3 text-cyan-300">streamModels(selected)</p>
-        </div>
-      </>
-    ),
-  },
-  {
-    model: MODEL_IDENTITIES.qwen,
-    latency: "2.1s",
-    content: (
-      <>
-        <p className="font-medium text-zinc-100">Build it in three layers</p>
-        <ol className="mt-3 space-y-2.5">
-          <li><span className="mr-2 text-violet-400">01</span>Request orchestration</li>
-          <li><span className="mr-2 text-violet-400">02</span>Provider adapters</li>
-          <li><span className="mr-2 text-violet-400">03</span>Live comparison UI</li>
-        </ol>
-        <p className="mt-4 text-zinc-500">This keeps provider failures isolated.</p>
-      </>
-    ),
-  },
-  {
-    model: MODEL_IDENTITIES.kimi,
-    latency: "2.4s",
-    content: (
-      <>
-        <p className="font-medium text-zinc-100">A practical V1</p>
-        <p className="mt-2">
-          Fan out one prompt, preserve shared context, and let users continue from the strongest response.
-        </p>
-        <div className="mt-4 flex flex-wrap gap-1.5">
-          {['Parallel SSE', 'Shared context', 'Usage totals'].map((item) => (
-            <span className="rounded-md border border-white/[0.07] bg-white/[0.04] px-2 py-1 text-[10px] text-zinc-400" key={item}>
-              {item}
-            </span>
-          ))}
-        </div>
-      </>
-    ),
-  },
-];
+    {
+      model: MODEL_IDENTITIES.deepseek,
+      latency: "1.8s",
+      content: (
+        <>
+          <p className="font-medium text-zinc-100">Recommended architecture</p>
+          <p className="mt-2">
+            Use a shared request coordinator, then stream every provider independently into a normalized branch.
+          </p>
+          <div className="mt-4 rounded-lg border border-white/[0.07] bg-black/40 p-3 font-mono text-[10px] leading-5 text-zinc-400">
+            <p><span className="text-violet-400">const</span> results = await</p>
+            <p className="pl-3 text-cyan-300">streamModels(selected)</p>
+          </div>
+        </>
+      ),
+    },
+    {
+      model: MODEL_IDENTITIES.qwen,
+      latency: "2.1s",
+      content: (
+        <>
+          <p className="font-medium text-zinc-100">Build it in three layers</p>
+          <ol className="mt-3 space-y-2.5">
+            <li><span className="mr-2 text-violet-400">01</span>Request orchestration</li>
+            <li><span className="mr-2 text-violet-400">02</span>Provider adapters</li>
+            <li><span className="mr-2 text-violet-400">03</span>Live comparison UI</li>
+          </ol>
+          <p className="mt-4 text-zinc-500">This keeps provider failures isolated.</p>
+        </>
+      ),
+    },
+    {
+      model: MODEL_IDENTITIES.kimi,
+      latency: "2.4s",
+      content: (
+        <>
+          <p className="font-medium text-zinc-100">A practical V1</p>
+          <p className="mt-2">
+            Fan out one prompt, preserve shared context, and let users continue from the strongest response.
+          </p>
+          <div className="mt-4 flex flex-wrap gap-1.5">
+            {['Parallel SSE', 'Shared context', 'Usage totals'].map((item) => (
+              <span className="rounded-md border border-white/[0.07] bg-white/[0.04] px-2 py-1 text-[10px] text-zinc-400" key={item}>
+                {item}
+              </span>
+            ))}
+          </div>
+        </>
+      ),
+    },
+  ];
 
 const toolbarIconClass = "size-3.5 text-zinc-500";
 
@@ -234,10 +233,6 @@ export function ChatSessionShowcase() {
         </div>
       </div>
 
-      <div className="wisp-float-slow absolute -left-3 top-20 hidden items-center gap-2 rounded-full border border-white/10 bg-[#111114]/95 px-3 py-2 text-[10px] text-zinc-300 shadow-2xl backdrop-blur-xl lg:flex">
-        <Sparkles className="size-3.5 text-violet-300" />
-        One prompt · 3 perspectives
-      </div>
       <div className="wisp-float-slower absolute -right-3 bottom-24 hidden items-center gap-2 rounded-full border border-white/10 bg-[#111114]/95 px-3 py-2 text-[10px] text-zinc-300 shadow-2xl backdrop-blur-xl lg:flex">
         <span className="size-1.5 rounded-full bg-emerald-400" />
         $0.018 total

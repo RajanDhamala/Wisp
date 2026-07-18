@@ -21,6 +21,7 @@ import useUserStore, {
 } from "./UserStore.tsx";
 import { API_BASE_URL } from "./Utils/ApiConfig.ts";
 import LandingPage from "./Pages/LandingPage.tsx";
+import PricingPage from "./Pages/PricingPage.tsx";
 
 type ApiEnvelope<T> = {
   data: T;
@@ -106,6 +107,7 @@ function App() {
         <Suspense fallback={<Loader />}>
           <Routes>
             <Route path="/" element={<LandingPage />} />
+            <Route path="/pricing" element={<PricingPage />} />
             <Route path="/login" element={<LazyLoginPage />} />
             <Route path="/register" element={<Navigate replace to="/login" />} />
             <Route path="/callback" element={<LazyTestPage />} />

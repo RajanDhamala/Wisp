@@ -6,6 +6,7 @@ import {
   GetSession,
   RenameSession,
   DeleteSession,
+  DeleteMessage,
   ListModels,
   CreateMessage,
 } from "../Controllers/SessionContorller.js";
@@ -19,6 +20,7 @@ SessionRouter.use(AuthUser);
 SessionRouter.route("/").get(ListSessions).post(CreateSession);
 
 SessionRouter.post("/:sessionId/messages", CreateMessage);
+SessionRouter.delete("/:sessionId/messages/:messageId", DeleteMessage);
 
 SessionRouter.route("/:sessionId")
   .get(GetSession)

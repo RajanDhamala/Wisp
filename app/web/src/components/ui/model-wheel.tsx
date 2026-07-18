@@ -92,24 +92,24 @@ export function ModelWheel({
           onMouseLeave={() => setInteracting(false)}
         >
           <div className="wisp-wheel-orbit-layer absolute inset-0 z-10">
-          <svg aria-hidden="true" className="pointer-events-none absolute inset-0 size-full" fill="none" viewBox="0 0 680 680">
-            <defs>
-              <linearGradient id="wheel-orbit" x1="80" x2="600" y1="80" y2="600">
-                <stop stopColor="#0284c7" stopOpacity="0" />
-                <stop offset="0.5" stopColor="#22d3ee" stopOpacity="0.5" />
-                <stop offset="1" stopColor="#fb7185" stopOpacity="0" />
-              </linearGradient>
-            </defs>
-            <circle className="wisp-wheel-ring" cx="340" cy="340" r="286" stroke="url(#wheel-orbit)" strokeDasharray="3 13" />
-            <circle cx="340" cy="340" r="223" stroke="currentColor" strokeDasharray="1 15" strokeOpacity="0.09" />
-            <circle cx="340" cy="340" fill="currentColor" fillOpacity="0.018" r="174" />
-            <circle cx="340" cy="54" fill="#22d3ee" r="3.5">
-              <animate attributeName="opacity" dur="2.4s" repeatCount="indefinite" values="0.25;1;0.25" />
-            </circle>
-            <circle cx="340" cy="626" fill="#fb7185" r="2.5">
-              <animate attributeName="opacity" begin="-1.2s" dur="2.4s" repeatCount="indefinite" values="0.2;0.9;0.2" />
-            </circle>
-          </svg>
+            <svg aria-hidden="true" className="pointer-events-none absolute inset-0 size-full" fill="none" viewBox="0 0 680 680">
+              <defs>
+                <linearGradient id="wheel-orbit" x1="80" x2="600" y1="80" y2="600">
+                  <stop stopColor="#0284c7" stopOpacity="0" />
+                  <stop offset="0.5" stopColor="#22d3ee" stopOpacity="0.5" />
+                  <stop offset="1" stopColor="#fb7185" stopOpacity="0" />
+                </linearGradient>
+              </defs>
+              <circle className="wisp-wheel-ring" cx="340" cy="340" r="286" stroke="url(#wheel-orbit)" strokeDasharray="3 13" />
+              <circle cx="340" cy="340" r="223" stroke="currentColor" strokeDasharray="1 15" strokeOpacity="0.09" />
+              <circle cx="340" cy="340" fill="currentColor" fillOpacity="0.018" r="174" />
+              <circle cx="340" cy="54" fill="#22d3ee" r="3.5">
+                <animate attributeName="opacity" dur="2.4s" repeatCount="indefinite" values="0.25;1;0.25" />
+              </circle>
+              <circle cx="340" cy="626" fill="#fb7185" r="2.5">
+                <animate attributeName="opacity" begin="-1.2s" dur="2.4s" repeatCount="indefinite" values="0.2;0.9;0.2" />
+              </circle>
+            </svg>
 
           {models.map((model, index) => {
             const highlighted = model.id === highlightedModel.id;
@@ -134,23 +134,23 @@ export function ModelWheel({
                 type="button"
               >
                 <span className="wisp-wheel-model-face flex w-full flex-col items-center gap-1.5">
-                <span
-                  className={`relative flex size-10 items-center justify-center rounded-xl border shadow-sm transition-all duration-300 sm:size-12 sm:rounded-2xl ${
-                    highlighted
-                      ? "scale-110 border-sky-500/50 bg-white shadow-[0_12px_40px_rgba(14,165,233,0.16)] dark:bg-stone-900"
-                      : "border-stone-300/80 bg-white group-hover:border-sky-500/35 dark:border-white/[0.09] dark:bg-[#121212]"
-                  }`}
-                >
-                  <ModelProviderIcon className="size-5 sm:size-6" model={model} />
-                  {selected && (
-                    <span className="absolute -right-1 -top-1 flex size-4 items-center justify-center rounded-full bg-cyan-400 text-stone-950 ring-2 ring-[#f7f7f6] dark:ring-[#070707]">
-                      <Check className="size-2.5" strokeWidth={3} />
-                    </span>
-                  )}
-                </span>
-                <span className="hidden max-w-24 truncate text-[9px] font-semibold text-stone-600 dark:text-stone-400 sm:block">
-                  {model.label}
-                </span>
+                  <span
+                    className={`relative flex size-10 items-center justify-center rounded-xl border shadow-sm transition-all duration-300 sm:size-12 sm:rounded-2xl ${
+                      highlighted
+                        ? `scale-110 border-sky-500/50 shadow-[0_12px_40px_rgba(14,165,233,0.16)] dark:bg-stone-900 ${model.family === "kimi" ? "bg-stone-950" : "bg-white"}`
+                        : `border-stone-300/80 group-hover:border-sky-500/35 dark:border-white/[0.09] dark:bg-[#121212] ${model.family === "kimi" ? "bg-stone-950" : "bg-white"}`
+                    }`}
+                  >
+                    <ModelProviderIcon className="size-5 sm:size-6" model={model} />
+                    {selected && (
+                      <span className="absolute -right-1 -top-1 flex size-4 items-center justify-center rounded-full bg-cyan-400 text-stone-950 ring-2 ring-[#f7f7f6] dark:ring-[#070707]">
+                        <Check className="size-2.5" strokeWidth={3} />
+                      </span>
+                    )}
+                  </span>
+                  <span className="hidden max-w-24 truncate text-[9px] font-semibold text-stone-600 dark:text-stone-400 sm:block">
+                    {model.label}
+                  </span>
                 </span>
               </button>
             );
@@ -158,7 +158,7 @@ export function ModelWheel({
           </div>
 
           <div className="absolute left-1/2 top-1/2 z-20 flex size-[46%] -translate-x-1/2 -translate-y-1/2 flex-col items-center justify-center rounded-full border border-stone-300/80 bg-white/95 p-4 text-center shadow-[0_30px_100px_rgba(24,24,27,0.08)] backdrop-blur-xl dark:border-white/[0.08] dark:bg-[#0e0e0e]/95 dark:shadow-[0_30px_100px_rgba(0,0,0,0.45)] sm:size-[43%] sm:p-8">
-            <span className="flex size-10 items-center justify-center rounded-2xl border border-stone-200 bg-white dark:border-white/[0.08] dark:bg-white/[0.04] sm:size-14">
+            <span className={`flex size-10 items-center justify-center rounded-2xl border dark:border-white/[0.08] dark:bg-white/[0.04] sm:size-14 ${highlightedModel.family === "kimi" ? "border-stone-800 bg-stone-950" : "border-stone-200 bg-white"}`}>
               <ModelProviderIcon className="size-6 sm:size-8" model={highlightedModel} />
             </span>
             <p className="mt-3 max-w-40 text-balance text-sm font-semibold tracking-[-0.02em] sm:mt-4 sm:text-xl">
