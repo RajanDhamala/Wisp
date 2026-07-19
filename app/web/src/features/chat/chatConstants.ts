@@ -6,6 +6,8 @@ export const STREAM_TOKEN_FLUSH_MS = 40;
 export const MAX_PREVIEW_PATH_SEGMENTS = 12;
 export const MAX_PREVIEW_PATH_SEGMENT_CHARACTERS = 80;
 export const SESSION_PAGE_SIZE = 15;
+export const LIBRARY_PAGE_SIZE = 10;
+export const MEMORY_PAGE_SIZE = 20;
 export const SEARCH_DEBOUNCE_MS = 350;
 export const APPROVED_PREVIEW_DEPENDENCIES: Readonly<Record<string, string>> =
   Object.freeze({

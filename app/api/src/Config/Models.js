@@ -108,6 +108,7 @@ const MODEL_CATALOG = Object.freeze(
 );
 const MODEL_PROVIDER = "DeepSeek + OpenRouter";
 const FALLBACK_MODEL = "deepseek-v4-flash";
+const MEMORY_MODEL = "deepseek-v4-flash";
 const MODEL_IDS = new Set(MODEL_CATALOG.map((model) => model.id));
 const MODEL_PROVIDERS = new Map(
   MODEL_DEFINITIONS.map(({ id, provider }) => [id, provider]),
@@ -126,6 +127,7 @@ const getModelProvider = (model) =>
 export {
   FALLBACK_MODEL,
   getModelProvider,
+  MEMORY_MODEL,
   MODEL_CATALOG,
   MODEL_PROVIDER,
   resolveModel,

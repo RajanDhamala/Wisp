@@ -7,6 +7,7 @@ export interface CurrentUser {
   email: string;
   avatar: string | null;
   provider: string;
+  memoryAutoEnabled: boolean;
 }
 
 interface UserStore {

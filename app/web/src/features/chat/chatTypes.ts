@@ -66,6 +66,30 @@ export type SavedResponse = {
   createdAt: string;
 };
 
+export type LibraryPage = {
+  items: SavedResponse[];
+  nextCursor: string | null;
+};
+
+export type LibraryPages = InfiniteData<LibraryPage, string | null>;
+
+export type UserMemory = {
+  id: string;
+  kind: "PREFERENCE" | "PROFILE" | "PROJECT" | "CONSTRAINT";
+  content: string;
+  confidence: number;
+  importance: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type MemoryPage = {
+  items: UserMemory[];
+  nextCursor: string | null;
+};
+
+export type MemoryPages = InfiniteData<MemoryPage, string | null>;
+
 export type ApiEnvelope<T> = {
   success: boolean;
   message: string;

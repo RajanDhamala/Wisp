@@ -21,6 +21,7 @@ import toast from "react-hot-toast";
 import { LANDING_DRAFT_STORAGE_KEY } from "@/Utils/LandingDraft";
 import {
   apiRequest,
+  fetchLibraryPage,
   fetchSessionPage,
   libraryQueryKeys,
   projectQueryKeys,
@@ -41,6 +42,7 @@ import {
 import type {
   Chat,
   ChatMode,
+  LibraryPages,
   Message,
   ModelCatalog,
   PendingAttachment,
@@ -130,6 +132,7 @@ export const ChatPageContent = () => {
   const setTheme = useChatClientStore((state) => state.setTheme);
   const [chatActionDialog, setChatActionDialog] =
     useState<ChatActionDialogState | null>(null);
+  const [librarySearch, setLibrarySearch] = useState("");
   const [pageError, setPageError] = useState<string | null>(null);
   const chatScrollRef = useRef<HTMLDivElement>(null);
   const hydratedGenerationRef = useRef<string | null>(null);
@@ -149,10 +152,17 @@ export const ChatPageContent = () => {
     queryFn: () => apiRequest<Project[]>("/projects"),
   });
 
-  const libraryQuery = useQuery<SavedResponse[], Error>({
-    queryKey: libraryQueryKeys.responses,
-    queryFn: () => apiRequest<SavedResponse[]>("/library/responses"),
+  const libraryQuery = useInfiniteQuery({
+    queryKey: libraryQueryKeys.list(librarySearch),
+    queryFn: ({ pageParam, signal }) =>
+      fetchLibraryPage({
+        cursor: pageParam,
+        search: librarySearch,
+        signal,
+      }),
     enabled: activeDialog === "library",
+    initialPageParam: null as string | null,
+    getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
   });
 
   const sessionsQuery = useInfiniteQuery({
@@ -476,18 +486,12 @@ export const ChatPageContent = () => {
     mutationKey: ["library", "save-response"],
     retry: 0,
     mutationFn: ({ messageId }) =>
-      apiRequest<SavedResponse>("/library/responses", {
+      apiRequest<SavedResponse>("/library", {
         method: "POST",
         body: JSON.stringify({ messageId }),
       }),
-    onSuccess: (savedResponse) => {
-      queryClient.setQueryData<SavedResponse[]>(
-        libraryQueryKeys.responses,
-        (current = []) => [
-          savedResponse,
-          ...current.filter((item) => item.id !== savedResponse.id),
-        ],
-      );
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: libraryQueryKeys.lists });
       toast.success("Saved to library");
     },
     onError: (error) => setPageError(error.message),
@@ -498,20 +502,32 @@ export const ChatPageContent = () => {
     retry: 0,
     mutationFn: async (savedResponseId) => {
       await apiRequest<{ id: string }>(
-        `/library/responses/${encodeURIComponent(savedResponseId)}`,
+        `/library/${encodeURIComponent(savedResponseId)}`,
         { method: "DELETE" },
       );
       return savedResponseId;
     },
     onSuccess: (savedResponseId) => {
-      queryClient.setQueryData<SavedResponse[]>(
-        libraryQueryKeys.responses,
-        (current = []) =>
-          current.filter((item) => item.id !== savedResponseId),
+      queryClient.setQueriesData<LibraryPages>(
+        { queryKey: libraryQueryKeys.lists },
+        (current) =>
+          current
+            ? {
+                ...current,
+                pages: current.pages.map((page) => ({
+                  ...page,
+                  items: page.items.filter(
+                    (item) => item.id !== savedResponseId,
+                  ),
+                })),
+              }
+            : current,
       );
       toast.success("Removed from library");
     },
     onError: (error) => setPageError(error.message),
+    onSettled: () =>
+      queryClient.invalidateQueries({ queryKey: libraryQueryKeys.lists }),
   });
 
   const sendMessageMutation = useSendMessageMutation({
@@ -1159,7 +1175,7 @@ export const ChatPageContent = () => {
     [projectsQuery.data],
   );
   const savedResponses = useMemo(
-    () => libraryQuery.data ?? [],
+    () => libraryQuery.data?.pages.flatMap((page) => page.items) ?? [],
     [libraryQuery.data],
   );
   const closeMobileSidebar = useCallback(
@@ -1213,7 +1229,10 @@ export const ChatPageContent = () => {
     [setAttachments],
   );
   const closeDialog = useCallback(
-    () => setActiveDialog(null),
+    () => {
+      setActiveDialog(null);
+      setLibrarySearch("");
+    },
     [setActiveDialog],
   );
   const selectSearchChat = useCallback(
@@ -1366,9 +1385,14 @@ export const ChatPageContent = () => {
               : null
           }
           error={libraryQuery.error?.message}
+          hasMore={Boolean(libraryQuery.hasNextPage)}
           loading={libraryQuery.isLoading}
+          loadingMore={libraryQuery.isFetchingNextPage}
           onClose={closeDialog}
           onDelete={deleteSavedResponse}
+          onLoadMore={() => void libraryQuery.fetchNextPage()}
+          onQueryChange={setLibrarySearch}
+          query={librarySearch}
           responses={savedResponses}
         />
       )}

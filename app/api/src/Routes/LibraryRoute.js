@@ -8,8 +8,8 @@ import AuthUser from "../Middlewares/AuthMiddelware.js";
 
 const LibraryRouter = Router();
 
-LibraryRouter.use(AuthUser);
-LibraryRouter.route("/responses").get(ListSavedResponses).post(SaveResponse);
-LibraryRouter.delete("/responses/:savedResponseId", DeleteSavedResponse);
+LibraryRouter.get("/", AuthUser, ListSavedResponses);
+LibraryRouter.post("/", AuthUser, SaveResponse);
+LibraryRouter.delete("/:savedResponseId", AuthUser, DeleteSavedResponse);
 
 export default LibraryRouter;

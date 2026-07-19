@@ -12,15 +12,18 @@ datasource db {
 }
 
 model User {
-  id             String          @id @default(uuid())
-  fullname       String
-  email          String          @unique
-  avatar         String?
-  session        Sessions[]
-  projects       Project[]
-  savedResponses SavedResponse[]
-  createdAt      DateTime        @default(now())
-  provider       String
+  id                  String          @id @default(uuid())
+  fullname            String
+  email               String          @unique
+  avatar              String?
+  memoryAutoEnabled   Boolean         @default(false)
+  memoryAutoEnabledAt DateTime?
+  session             Sessions[]
+  projects            Project[]
+  savedResponses      SavedResponse[]
+  memories            UserMemory[]
+  createdAt           DateTime        @default(now())
+  provider            String
 }
 
 model Project {
@@ -37,15 +40,16 @@ model Project {
 }
 
 model Sessions {
-  id        String     @id @default(uuid())
-  title     String     @default("New chat")
-  owner     String
-  user      User       @relation(fields: [owner], references: [id], onDelete: Cascade)
-  projectId String?
-  project   Project?   @relation(fields: [projectId], references: [id], onDelete: SetNull)
-  createdAt DateTime   @default(now())
-  updatedAt DateTime   @updatedAt
-  messages  Messages[]
+  id          String              @id @default(uuid())
+  title       String              @default("New chat")
+  owner       String
+  user        User                @relation(fields: [owner], references: [id], onDelete: Cascade)
+  projectId   String?
+  project     Project?            @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+  messages    Messages[]
+  memoryState SessionMemoryState?
 
   @@index([owner, updatedAt])
   @@index([projectId, updatedAt])
@@ -86,4 +90,30 @@ model SavedResponse {
 
   @@unique([owner, sourceMessageId])
   @@index([owner, createdAt])
+}
+
+model UserMemory {
+  id              String   @id @default(uuid())
+  owner           String
+  user            User     @relation(fields: [owner], references: [id], onDelete: Cascade)
+  memoryKey       String
+  kind            String
+  content         String   @db.Text
+  confidence      Float
+  importance      Float
+  sourceSessionId String?
+  sourceMessageId String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([owner, memoryKey])
+  @@index([owner, updatedAt])
+}
+
+model SessionMemoryState {
+  sessionId          String    @id
+  session            Sessions  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  processedThroughAt DateTime?
+  processedMessageId String?
+  updatedAt          DateTime  @updatedAt
 }

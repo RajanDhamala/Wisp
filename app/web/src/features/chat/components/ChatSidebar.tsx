@@ -24,7 +24,6 @@ import {
   type ReactNode,
   memo,
   useEffect,
-  useMemo,
   useRef,
   useState,
 } from "react";
@@ -36,6 +35,7 @@ import {
   apiRequest,
   fetchSessionPage,
   libraryQueryKeys,
+  memoryQueryKeys,
   projectQueryKeys,
   sessionQueryKeys,
 } from "../chatApi";
@@ -52,6 +52,7 @@ import type {
 } from "../chatTypes";
 import { formatResponseTime, useDebouncedValue } from "../chatUtils";
 import { IconButton } from "./ChatPrimitives";
+import { MemorySettingsDialog } from "./MemorySettingsDialog";
 
 const SidebarItem = ({
   icon,
@@ -745,31 +746,30 @@ export const SearchChatsDialog = ({
 export const LibraryDialog = ({
   deletingResponseId,
   error,
+  hasMore,
   loading,
+  loadingMore,
   onClose,
   onDelete,
+  onLoadMore,
+  onQueryChange,
+  query,
   responses,
 }: {
   deletingResponseId: string | null;
   error?: string;
+  hasMore: boolean;
   loading: boolean;
+  loadingMore: boolean;
   onClose: () => void;
   onDelete: (savedResponseId: string) => void;
+  onLoadMore: () => void;
+  onQueryChange: (query: string) => void;
+  query: string;
   responses: SavedResponse[];
 }) => {
   const [copiedResponseId, setCopiedResponseId] = useState<string | null>(null);
-  const [query, setQuery] = useState("");
-  const normalizedQuery = query.trim().toLowerCase();
-  const matchingResponses = useMemo(
-    () =>
-      responses.filter((response) =>
-        [response.sourceChatTitle, response.model ?? "", response.content]
-          .join("\n")
-          .toLowerCase()
-          .includes(normalizedQuery),
-      ),
-    [normalizedQuery, responses],
-  );
+  const hasQuery = Boolean(query.trim());
 
   useEffect(() => {
     const closeOnEscape = (event: globalThis.KeyboardEvent) => {
@@ -817,7 +817,7 @@ export const LibraryDialog = ({
             <Search className="size-4 text-zinc-400" />
             <input
               className="min-w-0 flex-1 bg-transparent text-sm text-zinc-950 outline-none placeholder:text-zinc-400 dark:text-zinc-100"
-              onChange={(event) => setQuery(event.target.value)}
+              onChange={(event) => onQueryChange(event.target.value)}
               placeholder="Search saved responses"
               value={query}
             />
@@ -837,15 +837,15 @@ export const LibraryDialog = ({
             <p className="py-12 text-center text-sm text-red-600 dark:text-red-400">
               {error}
             </p>
-          ) : !matchingResponses.length ? (
+          ) : !responses.length ? (
             <div className="py-14 text-center">
               <Bookmark className="mx-auto size-8 text-zinc-300 dark:text-zinc-700" />
               <p className="mt-3 text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                {normalizedQuery
+                {hasQuery
                   ? "No saved responses match your search."
                   : "Your library is empty."}
               </p>
-              {!normalizedQuery && (
+              {!hasQuery && (
                 <p className="mt-1 text-xs text-zinc-500">
                   Use the response menu to save something useful.
                 </p>
@@ -853,7 +853,7 @@ export const LibraryDialog = ({
             </div>
           ) : (
             <div className="space-y-3">
-              {matchingResponses.map((response) => (
+              {responses.map((response) => (
                 <article
                   className="rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950"
                   key={response.id}
@@ -894,6 +894,16 @@ export const LibraryDialog = ({
                   </div>
                 </article>
               ))}
+              {hasMore && (
+                <button
+                  className="flex h-10 w-full items-center justify-center rounded-xl border border-zinc-200 text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-100 disabled:cursor-wait disabled:opacity-60 dark:border-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-900"
+                  disabled={loadingMore}
+                  onClick={onLoadMore}
+                  type="button"
+                >
+                  {loadingMore ? "Loading…" : "Load more"}
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -926,30 +936,37 @@ const getSafeAvatarUrl = (avatar?: string | null) => {
 };
 
 const CollapsedProfile = () => {
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const currentUser = useUserStore((state) => state.currentUser);
   const avatarUrl = getSafeAvatarUrl(currentUser?.avatar);
 
   return (
-    <button
-      className="flex size-10 items-center justify-center rounded-lg hover:bg-zinc-200/70 dark:hover:bg-zinc-800"
-      title={currentUser?.fullname || "Account"}
-      type="button"
-    >
-      {avatarUrl ? (
-        <img
-          alt=""
-          className="size-8 rounded-full object-cover"
-          decoding="async"
-          loading="lazy"
-          referrerPolicy="no-referrer"
-          src={avatarUrl}
-        />
-      ) : (
-        <span className="flex size-8 items-center justify-center rounded-full bg-zinc-800 text-xs font-semibold text-white dark:bg-zinc-200 dark:text-zinc-900">
-          {getUserInitials(currentUser?.fullname)}
-        </span>
+    <>
+      <button
+        className="flex size-10 items-center justify-center rounded-lg hover:bg-zinc-200/70 dark:hover:bg-zinc-800"
+        onClick={() => setSettingsOpen(true)}
+        title={`Settings for ${currentUser?.fullname || "account"}`}
+        type="button"
+      >
+        {avatarUrl ? (
+          <img
+            alt=""
+            className="size-8 rounded-full object-cover"
+            decoding="async"
+            loading="lazy"
+            referrerPolicy="no-referrer"
+            src={avatarUrl}
+          />
+        ) : (
+          <span className="flex size-8 items-center justify-center rounded-full bg-zinc-800 text-xs font-semibold text-white dark:bg-zinc-200 dark:text-zinc-900">
+            {getUserInitials(currentUser?.fullname)}
+          </span>
+        )}
+      </button>
+      {settingsOpen && (
+        <MemorySettingsDialog onClose={() => setSettingsOpen(false)} />
       )}
-    </button>
+    </>
   );
 };
 
@@ -961,6 +978,7 @@ const ProfileMenu = ({
   onToggleTheme: () => void;
 }) => {
   const [open, setOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const clearCurrentUser = useUserStore((state) => state.clearCurrentUser);
@@ -974,7 +992,8 @@ const ProfileMenu = ({
       queryClient.removeQueries({ queryKey: sessionQueryKeys.all });
       queryClient.removeQueries({ queryKey: sessionQueryKeys.models });
       queryClient.removeQueries({ queryKey: projectQueryKeys.all });
-      queryClient.removeQueries({ queryKey: libraryQueryKeys.responses });
+      queryClient.removeQueries({ queryKey: libraryQueryKeys.all });
+      queryClient.removeQueries({ queryKey: memoryQueryKeys.all });
       queryClient.setQueryData(CURRENT_USER_QUERY_KEY, null);
       window.localStorage.removeItem(SELECTED_PROJECT_STORAGE_KEY);
       clearCurrentUser();
@@ -990,6 +1009,10 @@ const ProfileMenu = ({
         <div className="absolute bottom-[calc(100%+8px)] left-2 right-2 overflow-hidden rounded-xl border border-zinc-200 bg-white p-1 shadow-xl dark:border-zinc-700 dark:bg-zinc-900">
           <button
             className="flex h-10 w-full items-center gap-3 rounded-lg px-3 text-sm text-zinc-700 hover:bg-zinc-100 dark:text-zinc-200 dark:hover:bg-zinc-800"
+            onClick={() => {
+              setOpen(false);
+              setSettingsOpen(true);
+            }}
             type="button"
           >
             <Settings className="size-4" />
@@ -1054,6 +1077,9 @@ const ProfileMenu = ({
           className={`size-4 text-zinc-500 ${open ? "rotate-180" : ""}`}
         />
       </button>
+      {settingsOpen && (
+        <MemorySettingsDialog onClose={() => setSettingsOpen(false)} />
+      )}
     </div>
   );
 };

@@ -1,10 +1,14 @@
 import { API_BASE_URL } from "@/Utils/ApiConfig";
 import {
+  LIBRARY_PAGE_SIZE,
   MAX_EVENT_STREAM_BLOCK_CHARACTERS,
+  MEMORY_PAGE_SIZE,
   SESSION_PAGE_SIZE,
 } from "./chatConstants";
 import type {
   ApiEnvelope,
+  LibraryPage,
+  MemoryPage,
   SessionPage,
   SessionPageResponse,
 } from "./chatTypes";
@@ -27,7 +31,15 @@ export const projectQueryKeys = {
 };
 
 export const libraryQueryKeys = {
-  responses: ["library", "responses"] as const,
+  all: ["library"] as const,
+  lists: ["library", "list"] as const,
+  list: (search: string) => ["library", "list", { search }] as const,
+};
+
+export const memoryQueryKeys = {
+  all: ["memories"] as const,
+  lists: ["memories", "list"] as const,
+  list: ["memories", "list"] as const,
 };
 
 export const readResponseError = async (response: Response) => {
@@ -88,6 +100,37 @@ export const fetchSessionPage = async ({
     items: page.items.map((session) => normalizeSession(session, [])),
     nextCursor: page.nextCursor,
   };
+};
+
+export const fetchLibraryPage = ({
+  cursor,
+  search,
+  signal,
+}: {
+  cursor?: string | null;
+  search?: string;
+  signal?: AbortSignal;
+}): Promise<LibraryPage> => {
+  const params = new URLSearchParams({ limit: String(LIBRARY_PAGE_SIZE) });
+  if (cursor) params.set("cursor", cursor);
+  if (search) params.set("search", search);
+
+  return apiRequest<LibraryPage>(`/library?${params.toString()}`, { signal });
+};
+
+export const fetchMemoryPage = ({
+  cursor,
+  signal,
+}: {
+  cursor?: string | null;
+  signal?: AbortSignal;
+}): Promise<MemoryPage> => {
+  const params = new URLSearchParams({ limit: String(MEMORY_PAGE_SIZE) });
+  if (cursor) params.set("cursor", cursor);
+
+  return apiRequest<MemoryPage>(`/user/memories?${params.toString()}`, {
+    signal,
+  });
 };
 
 export const consumeEventStream = async (

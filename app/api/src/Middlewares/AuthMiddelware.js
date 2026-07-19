@@ -65,6 +65,7 @@ const AuthUser = asyncHandler(async (req, res, next) => {
       email: true,
       avatar: true,
       provider: true,
+      memoryAutoEnabled: true,
     },
   });
 

@@ -59,6 +59,7 @@ const HandelOuathLogin = asyncHandler(async (req, res) => {
     email: dbUser.email,
     avatar: dbUser.avatar,
     provider: dbUser.provider,
+    memoryAutoEnabled: dbUser.memoryAutoEnabled,
   };
 
   return res
