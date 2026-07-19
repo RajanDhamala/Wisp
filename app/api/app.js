@@ -5,6 +5,7 @@ import cors from "cors";
 import UserRouter from "./src/Routes/UserRoute.js";
 import SessionRouter from "./src/Routes/SessionRoute.js";
 import ProjectRouter from "./src/Routes/ProjectRoute.js";
+import LibraryRouter from "./src/Routes/LibraryRoute.js";
 import { HandelOuathLogin } from "./src/Controllers/UserController.js";
 
 dotenv.config();
@@ -85,6 +86,7 @@ app.use("/user", UserRouter);
 app.use("/users", UserRouter);
 app.use("/session", SessionRouter);
 app.use("/projects", ProjectRouter);
+app.use("/library", LibraryRouter);
 
 app.use((err, req, res, next) => {
   const statusCode = err.statusCode || 500;

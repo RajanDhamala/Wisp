@@ -17,6 +17,8 @@ import {
   useRef,
   useState,
 } from "react";
+import ReactMarkdown, { type Components } from "react-markdown";
+import remarkGfm from "remark-gfm";
 import {
   APPROVED_PREVIEW_DEPENDENCIES,
   MAX_PREVIEW_PATH_SEGMENT_CHARACTERS,
@@ -128,15 +130,15 @@ const SandpackRuntime = lazy(() =>
               />
             </SandpackLayout>
             {failureMessage && (
-              <div className="absolute inset-0 z-10 flex items-center justify-center bg-white p-6">
-                <div className="max-w-2xl rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+              <div className="absolute inset-0 z-10 flex items-center justify-center bg-white p-6 dark:bg-zinc-950">
+                <div className="max-w-2xl rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-900/70 dark:bg-red-950/40 dark:text-red-300">
                   <p className="font-semibold">Preview failed to start</p>
                   <pre className="subtle-scrollbar mt-2 max-h-80 overflow-auto whitespace-pre-wrap font-mono text-xs">
                     {failureMessage}
                   </pre>
                   {timedOut && (
                     <button
-                      className="mt-3 rounded-lg border border-red-300 px-3 py-1.5 text-xs font-medium hover:bg-red-100"
+                      className="mt-3 rounded-lg border border-red-300 px-3 py-1.5 text-xs font-medium hover:bg-red-100 dark:border-red-800 dark:hover:bg-red-950/70"
                       onClick={() => void sandpack.runSandpack()}
                       type="button"
                     >
@@ -914,6 +916,104 @@ const CodeBlock = ({
   </div>
 );
 
+const markdownComponents: Components = {
+  a: ({ children, href }) => (
+    <a
+      className="font-medium text-blue-600 underline decoration-blue-300 underline-offset-2 hover:text-blue-700 dark:text-blue-400 dark:decoration-blue-700 dark:hover:text-blue-300"
+      href={href}
+      rel="noreferrer noopener"
+      target="_blank"
+    >
+      {children}
+    </a>
+  ),
+  blockquote: ({ children }) => (
+    <blockquote className="my-4 border-l-4 border-zinc-300 bg-zinc-50 px-4 py-2 text-zinc-600 dark:border-zinc-700 dark:bg-zinc-900/70 dark:text-zinc-300">
+      {children}
+    </blockquote>
+  ),
+  code: ({ children, className, ...props }) => (
+    <code
+      className={`${className ?? ""} rounded-md bg-zinc-100 px-1.5 py-0.5 font-mono text-[0.875em] text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100`}
+      {...props}
+    >
+      {children}
+    </code>
+  ),
+  em: ({ children }) => <em className="italic">{children}</em>,
+  h1: ({ children }) => (
+    <h1 className="mb-3 mt-6 text-2xl font-bold leading-tight tracking-tight text-zinc-950 first:mt-0 dark:text-white">
+      {children}
+    </h1>
+  ),
+  h2: ({ children }) => (
+    <h2 className="mb-3 mt-6 text-xl font-bold leading-tight text-zinc-950 first:mt-0 dark:text-white">
+      {children}
+    </h2>
+  ),
+  h3: ({ children }) => (
+    <h3 className="mb-2 mt-5 text-lg font-semibold leading-snug text-zinc-950 first:mt-0 dark:text-white">
+      {children}
+    </h3>
+  ),
+  hr: () => <hr className="my-6 border-zinc-200 dark:border-zinc-800" />,
+  li: ({ children }) => (
+    <li className="pl-1 marker:text-zinc-500 [&>p]:my-0">{children}</li>
+  ),
+  ol: ({ children }) => (
+    <ol className="my-3 list-decimal space-y-1 pl-6">{children}</ol>
+  ),
+  p: ({ children }) => (
+    <p className="my-3 whitespace-pre-wrap first:mt-0 last:mb-0">{children}</p>
+  ),
+  pre: ({ children }) => (
+    <pre className="subtle-scrollbar my-4 overflow-x-auto rounded-xl bg-zinc-950 p-4 text-[13px] leading-6 text-zinc-100 [&_code]:bg-transparent [&_code]:p-0 [&_code]:text-inherit">
+      {children}
+    </pre>
+  ),
+  strong: ({ children }) => (
+    <strong className="font-semibold text-zinc-950 dark:text-white">
+      {children}
+    </strong>
+  ),
+  table: ({ children }) => (
+    <div className="subtle-scrollbar my-4 overflow-x-auto rounded-xl border border-zinc-200 dark:border-zinc-800">
+      <table className="w-full min-w-max border-collapse text-left text-sm">
+        {children}
+      </table>
+    </div>
+  ),
+  td: ({ children }) => (
+    <td className="border-b border-r border-zinc-200 px-3 py-2 align-top last:border-r-0 dark:border-zinc-800">
+      {children}
+    </td>
+  ),
+  th: ({ children }) => (
+    <th className="border-b border-r border-zinc-200 bg-zinc-100 px-3 py-2 font-semibold text-zinc-900 last:border-r-0 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100">
+      {children}
+    </th>
+  ),
+  tr: ({ children }) => (
+    <tr className="last:[&>td]:border-b-0">{children}</tr>
+  ),
+  ul: ({ children }) => (
+    <ul className="my-3 list-disc space-y-1 pl-6">{children}</ul>
+  ),
+};
+
+const markdownPlugins = [remarkGfm];
+
+const MarkdownText = ({ content }: { content: string }) => (
+  <div className="min-w-0">
+    <ReactMarkdown
+      components={markdownComponents}
+      remarkPlugins={markdownPlugins}
+    >
+      {content}
+    </ReactMarkdown>
+  </div>
+);
+
 const RunnablePreview = ({
   project,
   onClose,
@@ -946,14 +1046,14 @@ const RunnablePreview = ({
       onMouseDown={onClose}
     >
       <section
-        className={`overflow-hidden border border-zinc-200 bg-white text-zinc-900 shadow-2xl ${fullScreen
+        className={`overflow-hidden border border-zinc-200 bg-white text-zinc-900 shadow-2xl dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-100 ${fullScreen
           ? "h-dvh w-screen rounded-none"
           : "w-full max-w-6xl rounded-xl"
           }`}
         onMouseDown={(event) => event.stopPropagation()}
       >
-        <div className="flex h-11 items-center justify-between border-b border-zinc-200 px-3">
-          <span className="flex min-w-0 items-center gap-2 text-sm font-medium text-zinc-800">
+        <div className="flex h-11 items-center justify-between border-b border-zinc-200 px-3 dark:border-zinc-800">
+          <span className="flex min-w-0 items-center gap-2 text-sm font-medium text-zinc-800 dark:text-zinc-200">
             <span className="size-2 shrink-0 rounded-full bg-emerald-500" />
             <span className="truncate">{project.label}</span>
             {project.fileCount > 1 && (
@@ -964,7 +1064,6 @@ const RunnablePreview = ({
           </span>
           <div className="flex items-center gap-1">
             <IconButton
-              className="dark:!text-zinc-600 dark:hover:!bg-zinc-200 dark:hover:!text-zinc-950"
               label={fullScreen ? "Exit full screen" : "Open full screen"}
               onClick={() => setFullScreen((current) => !current)}
             >
@@ -975,7 +1074,6 @@ const RunnablePreview = ({
               )}
             </IconButton>
             <IconButton
-              className="dark:!text-zinc-600 dark:hover:!bg-zinc-200 dark:hover:!text-zinc-950"
               label="Close preview"
               onClick={onClose}
             >
@@ -1054,9 +1152,10 @@ const AssistantContentComponent = ({
         }
         if (!part.content.trim()) return null;
         return (
-          <div className="whitespace-pre-wrap" key={`text-${index}`}>
-            {part.content.trim()}
-          </div>
+          <MarkdownText
+            content={part.content.trim()}
+            key={`text-${index}`}
+          />
         );
       })}
       {runnableProject && (

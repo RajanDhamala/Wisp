@@ -22,7 +22,7 @@ const MODEL_LOGOS: ReadonlyArray<{
   { match: "qwen", src: qwenLogo },
   { match: "mimo", src: xiaomiMimoLogo, invertInDark: true },
   { match: "kimi", src: kimiLogo, invertInDark: true },
-  { match: "glm", src: zaiLogo },
+  { match: "glm", src: zaiLogo, invertInDark: true },
 ];
 
 export const ModelLogo = ({

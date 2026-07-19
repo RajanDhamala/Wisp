@@ -5,7 +5,7 @@ export const MAX_EVENT_STREAM_BLOCK_CHARACTERS = 1_000_000;
 export const STREAM_TOKEN_FLUSH_MS = 40;
 export const MAX_PREVIEW_PATH_SEGMENTS = 12;
 export const MAX_PREVIEW_PATH_SEGMENT_CHARACTERS = 80;
-export const SESSION_PAGE_SIZE = 20;
+export const SESSION_PAGE_SIZE = 15;
 export const SEARCH_DEBOUNCE_MS = 350;
 export const APPROVED_PREVIEW_DEPENDENCIES: Readonly<Record<string, string>> =
   Object.freeze({
@@ -58,7 +58,6 @@ export const TEXT_FILE_EXTENSIONS = new Set([
 ]);
 
 export const RECOVERING_ASSISTANT_ID = "recovering-assistant";
-export const GENERATION_RECOVERY_WINDOW_MS = 5 * 60 * 1000;
 export const FAVORITE_MODELS_STORAGE_KEY = "wisp-favorite-models";
 export const BRANCH_MODE_STORAGE_KEY = "wisp-chat-mode";
 export const BRANCH_MODELS_STORAGE_KEY = "wisp-branch-models";

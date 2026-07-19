@@ -65,12 +65,18 @@ import { IconButton } from "./components/ChatPrimitives";
 import { ConversationMessages } from "./components/ChatMessages";
 import { Composer, EmptyState } from "./components/ChatComposer";
 import {
+  ChatActionDialog,
   LibraryDialog,
   SearchChatsDialog,
   Sidebar,
 } from "./components/ChatSidebar";
 import { useSessionCache } from "./hooks/useSessionCache";
 import { useSendMessageMutation } from "./hooks/useSendMessageMutation";
+
+type ChatActionDialogState = {
+  action: "rename" | "delete";
+  chat: Chat;
+};
 
 export const ChatPageContent = () => {
   const navigate = useNavigate();
@@ -122,6 +128,8 @@ export const ChatPageContent = () => {
   );
   const theme = useChatClientStore((state) => state.theme);
   const setTheme = useChatClientStore((state) => state.setTheme);
+  const [chatActionDialog, setChatActionDialog] =
+    useState<ChatActionDialogState | null>(null);
   const [pageError, setPageError] = useState<string | null>(null);
   const chatScrollRef = useRef<HTMLDivElement>(null);
   const hydratedGenerationRef = useRef<string | null>(null);
@@ -527,8 +535,8 @@ export const ChatPageContent = () => {
   const renameProjectAsync = renameProjectMutation.mutateAsync;
   const deleteProjectAsync = deleteProjectMutation.mutateAsync;
   const createSessionAsync = createSessionMutation.mutateAsync;
-  const renameSession = renameSessionMutation.mutate;
-  const deleteSession = deleteSessionMutation.mutate;
+  const renameSessionAsync = renameSessionMutation.mutateAsync;
+  const deleteSessionAsync = deleteSessionMutation.mutateAsync;
   const deleteResponseById = deleteResponseMutation.mutate;
   const saveResponseById = saveResponseMutation.mutate;
   const deleteSavedResponseById = deleteSavedResponseMutation.mutate;
@@ -551,6 +559,9 @@ export const ChatPageContent = () => {
     : deleteSessionMutation.isPending
       ? (deleteSessionMutation.variables?.sessionId ?? null)
       : null;
+  const chatActionBusy = Boolean(
+    chatActionDialog && busySessionId === chatActionDialog.chat.id,
+  );
   const awaitingPersistedAssistant = isAwaitingPersistedAssistant(activeChat);
   const recoveryMessages = useMemo<Message[]>(() => {
     const generation = activeChat?.activeGeneration;
@@ -1002,23 +1013,48 @@ export const ChatPageContent = () => {
   }, [attachments, setAttachments]);
 
   const renameChat = useCallback((chat: Chat) => {
-    const requestedTitle = window.prompt("Rename chat", chat.title)?.trim();
-    if (!requestedTitle || requestedTitle === chat.title) return;
-
     setPageError(null);
-    renameSession({
-      sessionId: chat.id,
-      title: requestedTitle,
-    });
-  }, [renameSession]);
+    setChatActionDialog({ action: "rename", chat });
+    setMobileSidebarOpen(false);
+  }, [setMobileSidebarOpen]);
 
   const deleteChat = useCallback((chat: Chat) => {
-    const confirmed = window.confirm(`Delete “${chat.title}”?`);
-    if (!confirmed) return;
-
     setPageError(null);
-    deleteSession({ sessionId: chat.id });
-  }, [deleteSession]);
+    setChatActionDialog({ action: "delete", chat });
+    setMobileSidebarOpen(false);
+  }, [setMobileSidebarOpen]);
+
+  const closeChatActionDialog = useCallback(() => {
+    if (!chatActionBusy) setChatActionDialog(null);
+  }, [chatActionBusy]);
+
+  const confirmRenameChat = useCallback(
+    async (title: string) => {
+      if (!chatActionDialog || chatActionDialog.action !== "rename") return;
+      setPageError(null);
+      try {
+        await renameSessionAsync({
+          sessionId: chatActionDialog.chat.id,
+          title,
+        });
+        setChatActionDialog(null);
+      } catch {
+        return;
+      }
+    },
+    [chatActionDialog, renameSessionAsync],
+  );
+
+  const confirmDeleteChat = useCallback(async () => {
+    if (!chatActionDialog || chatActionDialog.action !== "delete") return;
+    setPageError(null);
+    try {
+      await deleteSessionAsync({ sessionId: chatActionDialog.chat.id });
+      setChatActionDialog(null);
+    } catch {
+      return;
+    }
+  }, [chatActionDialog, deleteSessionAsync]);
 
   const toggleSidebar = useCallback(() => {
     if (window.innerWidth < 1024) {
@@ -1334,6 +1370,17 @@ export const ChatPageContent = () => {
           onClose={closeDialog}
           onDelete={deleteSavedResponse}
           responses={savedResponses}
+        />
+      )}
+      {chatActionDialog && (
+        <ChatActionDialog
+          action={chatActionDialog.action}
+          busy={chatActionBusy}
+          chat={chatActionDialog.chat}
+          key={`${chatActionDialog.action}-${chatActionDialog.chat.id}`}
+          onClose={closeChatActionDialog}
+          onDelete={confirmDeleteChat}
+          onRename={confirmRenameChat}
         />
       )}
     </div>

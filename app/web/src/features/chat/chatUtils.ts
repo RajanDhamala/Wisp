@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import {
-  GENERATION_RECOVERY_WINDOW_MS,
   SENSITIVE_ATTACHMENT_NAMES,
   TEXT_FILE_EXTENSIONS,
 } from "./chatConstants";
@@ -116,14 +115,5 @@ export const formatResponseTime = (
   }).format(created);
 };
 
-export const isAwaitingPersistedAssistant = (chat?: Chat | null) => {
-  if (chat?.activeGeneration) return true;
-  const lastMessage = chat?.messages.at(-1);
-  if (!lastMessage || lastMessage.role !== "user") return false;
-  if (!lastMessage.createdAt) return true;
-
-  return (
-    Date.now() - new Date(lastMessage.createdAt).getTime() <
-    GENERATION_RECOVERY_WINDOW_MS
-  );
-};
+export const isAwaitingPersistedAssistant = (chat?: Chat | null) =>
+  Boolean(chat?.activeGeneration);

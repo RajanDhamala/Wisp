@@ -25,6 +25,7 @@ import {
   memo,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import { Link, useNavigate } from "react-router-dom";
@@ -105,6 +106,20 @@ const ProjectSection = ({
   const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState("");
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const openMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!openMenuId) return;
+
+    const closeOnOutsidePointer = (event: PointerEvent) => {
+      if (openMenuRef.current?.contains(event.target as Node)) return;
+      setOpenMenuId(null);
+      setConfirmDeleteId(null);
+    };
+    window.addEventListener("pointerdown", closeOnOutsidePointer);
+    return () =>
+      window.removeEventListener("pointerdown", closeOnOutsidePointer);
+  }, [openMenuId]);
 
   const submitProject = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -227,7 +242,11 @@ const ProjectSection = ({
             }
 
             return (
-              <div className="group relative" key={project.id}>
+              <div
+                className="group relative"
+                key={project.id}
+                ref={openMenuId === project.id ? openMenuRef : undefined}
+              >
                 <button
                   className={`flex h-9 w-full items-center gap-2 rounded-lg pl-3 pr-16 text-left text-sm transition-colors ${selectedProjectId === project.id
                     ? "bg-zinc-200 text-zinc-950 dark:bg-zinc-800 dark:text-zinc-50"
@@ -250,10 +269,7 @@ const ProjectSection = ({
                 </span>
                 <button
                   aria-label={`Actions for ${project.name}`}
-                  className={`absolute right-1 top-0.5 flex size-8 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-300 disabled:opacity-40 dark:hover:bg-zinc-700 ${openMenuId === project.id
-                    ? "opacity-100"
-                    : "opacity-0 group-hover:opacity-100"
-                    }`}
+                  className="absolute right-1 top-0.5 flex size-8 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-300 disabled:opacity-40 dark:hover:bg-zinc-700 lg:opacity-0 lg:group-hover:opacity-100 lg:focus-visible:opacity-100"
                   disabled={busy}
                   onClick={() => {
                     setConfirmDeleteId(null);
@@ -357,12 +373,25 @@ const ChatHistory = ({
   onSelect: (id: string) => void;
 }) => {
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  const openMenuRef = useRef<HTMLDivElement>(null);
   const groups: SessionGroup[] = [
     "Today",
     "Previous 7 days",
     "Previous 30 days",
     "Older",
   ];
+
+  useEffect(() => {
+    if (!openMenuId) return;
+
+    const closeOnOutsidePointer = (event: PointerEvent) => {
+      if (openMenuRef.current?.contains(event.target as Node)) return;
+      setOpenMenuId(null);
+    };
+    window.addEventListener("pointerdown", closeOnOutsidePointer);
+    return () =>
+      window.removeEventListener("pointerdown", closeOnOutsidePointer);
+  }, [openMenuId]);
 
   if (loading) {
     return (
@@ -395,7 +424,11 @@ const ChatHistory = ({
             </h2>
             <div className="space-y-0.5">
               {groupedChats.map((chat) => (
-                <div className="group relative" key={chat.id}>
+                <div
+                  className="group relative"
+                  key={chat.id}
+                  ref={openMenuId === chat.id ? openMenuRef : undefined}
+                >
                   <button
                     className={`flex h-9 w-full items-center rounded-lg pl-3 pr-9 text-left text-sm transition-colors ${activeChatId === chat.id
                       ? "bg-zinc-200 text-zinc-950 dark:bg-zinc-800 dark:text-zinc-50"
@@ -413,10 +446,7 @@ const ChatHistory = ({
                   </button>
                   <button
                     aria-label={`Actions for ${chat.title}`}
-                    className={`absolute right-1 top-0.5 flex size-8 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-300 dark:hover:bg-zinc-700 ${openMenuId === chat.id
-                      ? "opacity-100"
-                      : "opacity-0 group-hover:opacity-100"
-                      }`}
+                    className="absolute right-1 top-0.5 flex size-8 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-300 dark:hover:bg-zinc-700 lg:opacity-0 lg:group-hover:opacity-100 lg:focus-visible:opacity-100"
                     disabled={busySessionId === chat.id}
                     onClick={() =>
                       setOpenMenuId((current) =>
@@ -465,6 +495,146 @@ const ChatHistory = ({
           {loadingMore ? "Loading older chats…" : "Scroll for older chats"}
         </p>
       )}
+    </div>
+  );
+};
+
+export const ChatActionDialog = ({
+  action,
+  busy,
+  chat,
+  onClose,
+  onDelete,
+  onRename,
+}: {
+  action: "rename" | "delete";
+  busy: boolean;
+  chat: Chat;
+  onClose: () => void;
+  onDelete: () => Promise<void>;
+  onRename: (title: string) => Promise<void>;
+}) => {
+  const [title, setTitle] = useState(chat.title);
+  const isRename = action === "rename";
+  const nextTitle = title.trim();
+  const canRename = Boolean(nextTitle && nextTitle !== chat.title);
+
+  useEffect(() => {
+    const closeOnEscape = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape" && !busy) onClose();
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [busy, onClose]);
+
+  const submitAction = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (busy) return;
+    if (isRename) {
+      if (!canRename) return;
+      await onRename(nextTitle);
+      return;
+    }
+    await onDelete();
+  };
+
+  return (
+    <div className="fixed inset-0 z-[120] flex items-center justify-center p-3 sm:p-6">
+      <button
+        aria-label={`Cancel ${action} chat`}
+        className="absolute inset-0 bg-black/55 backdrop-blur-[2px]"
+        disabled={busy}
+        onClick={onClose}
+        type="button"
+      />
+      <section
+        aria-describedby="chat-action-description"
+        aria-labelledby="chat-action-title"
+        aria-modal="true"
+        className="relative z-10 w-full max-w-md overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-700 dark:bg-zinc-950"
+        role="dialog"
+      >
+        <div className="flex items-start justify-between gap-4 border-b border-zinc-200 px-5 py-4 dark:border-zinc-800">
+          <div className="min-w-0">
+            <h2
+              className="text-base font-semibold text-zinc-950 dark:text-zinc-100"
+              id="chat-action-title"
+            >
+              {isRename ? "Rename chat" : "Delete chat?"}
+            </h2>
+            <p
+              className="mt-1 text-sm leading-5 text-zinc-500"
+              id="chat-action-description"
+            >
+              {isRename
+                ? "Choose a clear title so this conversation is easy to find later."
+                : "This conversation and all of its messages will be permanently deleted."}
+            </p>
+          </div>
+          <IconButton
+            disabled={busy}
+            label={`Cancel ${action} chat`}
+            onClick={onClose}
+          >
+            <X className="size-4" />
+          </IconButton>
+        </div>
+
+        <form className="p-5" onSubmit={(event) => void submitAction(event)}>
+          {isRename ? (
+            <label className="block">
+              <span className="mb-2 block text-sm font-medium text-zinc-800 dark:text-zinc-200">
+                Chat title
+              </span>
+              <input
+                autoFocus
+                className="h-11 w-full rounded-xl border border-zinc-300 bg-white px-3 text-sm text-zinc-950 outline-none transition-colors placeholder:text-zinc-400 focus:border-zinc-500 focus:ring-2 focus:ring-zinc-200 disabled:cursor-not-allowed disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:focus:border-zinc-500 dark:focus:ring-zinc-800"
+                disabled={busy}
+                maxLength={100}
+                onChange={(event) => setTitle(event.target.value)}
+                onFocus={(event) => event.currentTarget.select()}
+                value={title}
+              />
+            </label>
+          ) : (
+            <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 dark:border-red-900/70 dark:bg-red-950/30">
+              <p className="truncate text-sm font-medium text-red-800 dark:text-red-300">
+                {chat.title}
+              </p>
+              <p className="mt-1 text-xs text-red-600 dark:text-red-400">
+                This action cannot be undone.
+              </p>
+            </div>
+          )}
+
+          <div className="mt-5 flex justify-end gap-2">
+            <button
+              className="h-10 rounded-xl px-4 text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-50 dark:text-zinc-300 dark:hover:bg-zinc-900"
+              disabled={busy}
+              onClick={onClose}
+              type="button"
+            >
+              Cancel
+            </button>
+            <button
+              className={`h-10 rounded-xl px-4 text-sm font-semibold text-white transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${isRename
+                ? "bg-zinc-900 hover:bg-zinc-700 dark:bg-white dark:text-zinc-950 dark:hover:bg-zinc-200"
+                : "bg-red-600 hover:bg-red-700"
+                }`}
+              disabled={busy || (isRename && !canRename)}
+              type="submit"
+            >
+              {busy
+                ? isRename
+                  ? "Renaming…"
+                  : "Deleting…"
+                : isRename
+                  ? "Rename"
+                  : "Delete chat"}
+            </button>
+          </div>
+        </form>
+      </section>
     </div>
   );
 };

@@ -29,7 +29,7 @@ const PROVIDERS = Object.freeze({
 const MAX_CONTEXT_MESSAGES = 40;
 const MAX_ATTACHMENT_CHARACTERS = 200_000;
 const ACTIVE_GENERATION_TTL_MS = 30 * 60 * 1_000;
-const DEFAULT_SESSION_PAGE_SIZE = 20;
+const DEFAULT_SESSION_PAGE_SIZE = 15;
 const MAX_SESSION_PAGE_SIZE = 50;
 const activeGenerations = new Map();
 
@@ -37,6 +37,7 @@ const getActiveGeneration = (sessionId) => {
   const generation = activeGenerations.get(sessionId);
   if (!generation) return null;
   if (Date.now() - generation.startedAt > ACTIVE_GENERATION_TTL_MS) {
+    generation.abortController.abort();
     activeGenerations.delete(sessionId);
     return null;
   }
@@ -63,6 +64,7 @@ const serializeActiveGeneration = (sessionId) => {
 const beginActiveGeneration = (sessionId, models) => {
   if (getActiveGeneration(sessionId)) return null;
   const generation = {
+    abortController: new AbortController(),
     id: randomUUID(),
     mode: models.length > 1 ? "branching" : "normal",
     models: [...models],
@@ -92,7 +94,9 @@ const appendActiveBranchToken = (sessionId, model, token) => {
   branch.content += token;
 };
 
-const finishActiveGeneration = (sessionId) => {
+const finishActiveGeneration = (sessionId, generationId) => {
+  const generation = activeGenerations.get(sessionId);
+  if (!generation || generation.id !== generationId) return;
   activeGenerations.delete(sessionId);
 };
 
@@ -534,20 +538,14 @@ const ListSessions = asyncHandler(async (req, res) => {
     take: limit + 1,
     include: {
       _count: { select: { messages: true } },
-      messages: {
-        orderBy: { createdAt: "desc" },
-        take: 1,
-        select: { content: true, role: true, createdAt: true },
-      },
     },
   });
 
   const hasNextPage = sessions.length > limit;
   const page = sessions.slice(0, limit);
-  const items = page.map(({ messages, _count, ...session }) => ({
+  const items = page.map(({ _count, ...session }) => ({
     ...session,
     messageCount: _count.messages,
-    lastMessage: messages[0] ?? null,
   }));
   const nextCursor = hasNextPage
     ? encodeSessionCursor(page.at(-1))
@@ -659,6 +657,24 @@ const CreateMessage = asyncHandler(async (req, res) => {
   if (!activeGeneration) {
     throw new ApiError(409, "This session already has a response in progress");
   }
+  const handleClientDisconnect = () => {
+    if (res.writableEnded) return;
+    activeGeneration.abortController.abort();
+    finishActiveGeneration(session.id, activeGeneration.id);
+  };
+  const endStoppedGeneration = () => {
+    if (res.destroyed || res.writableEnded) return;
+    if (!res.headersSent) startEventStream(res);
+    writeEvent(res, "error", {
+      message: "Response generation stopped. Please try again.",
+    });
+    res.end();
+  };
+  const finishGeneration = () =>
+    finishActiveGeneration(session.id, activeGeneration.id);
+  res.once("close", handleClientDisconnect);
+  res.once("finish", finishGeneration);
+
   const storedContent =
     content ||
     `Shared ${attachments.length} text ${attachments.length === 1 ? "file" : "files"} for context.`;
@@ -682,7 +698,7 @@ const CreateMessage = asyncHandler(async (req, res) => {
       select: { role: true, content: true, model: true },
     });
   } catch (error) {
-    finishActiveGeneration(session.id);
+    finishActiveGeneration(session.id, activeGeneration.id);
     throw error;
   }
   const orderedContext = [...context].reverse();
@@ -711,6 +727,7 @@ const CreateMessage = asyncHandler(async (req, res) => {
         stream: true,
         stream_options: { include_usage: true },
       }),
+      signal: activeGeneration.abortController.signal,
     });
   };
 
@@ -762,6 +779,7 @@ const CreateMessage = asyncHandler(async (req, res) => {
         });
         return { ...result, requestedModel: branchModel };
       } catch (error) {
+        if (activeGeneration.abortController.signal.aborted) throw error;
         const failureMessage =
           error instanceof ApiError
             ? error.message
@@ -787,7 +805,16 @@ const CreateMessage = asyncHandler(async (req, res) => {
       }
     };
 
-    const results = await Promise.all(selectedModels.map(runBranch));
+    let results;
+    try {
+      results = await Promise.all(selectedModels.map(runBranch));
+    } catch (error) {
+      if (activeGeneration.abortController.signal.aborted) {
+        endStoppedGeneration();
+        return;
+      }
+      throw error;
+    }
     const generatedTitle =
       session.title === "New chat" ? createTitle(firstUserPrompt) : session.title;
     const branchCompletedAt = Date.now();
@@ -835,7 +862,7 @@ const CreateMessage = asyncHandler(async (req, res) => {
       });
     }
 
-    finishActiveGeneration(session.id);
+    finishActiveGeneration(session.id, activeGeneration.id);
     if (!res.destroyed && !res.writableEnded) res.end();
     return;
   }
@@ -848,11 +875,15 @@ const CreateMessage = asyncHandler(async (req, res) => {
     providerResponse = await requestProvider(providerModel);
     providerError = providerResponse.ok ? "" : await providerResponse.text();
   } catch (error) {
+    if (activeGeneration.abortController.signal.aborted) {
+      endStoppedGeneration();
+      return;
+    }
     console.error("Provider request could not be completed", error);
     const failureMessage =
       "The model provider could not be reached. Please try again.";
     await persistGenerationFailure(session.id, providerModel, failureMessage);
-    finishActiveGeneration(session.id);
+    finishActiveGeneration(session.id, activeGeneration.id);
     throw new ApiError(502, failureMessage);
   }
 
@@ -868,7 +899,7 @@ const CreateMessage = asyncHandler(async (req, res) => {
       providerError,
     );
     await persistGenerationFailure(session.id, providerModel, failureMessage);
-    finishActiveGeneration(session.id);
+    finishActiveGeneration(session.id, activeGeneration.id);
     throw new ApiError(502, failureMessage);
   }
 
@@ -926,6 +957,10 @@ const CreateMessage = asyncHandler(async (req, res) => {
     });
     if (!res.destroyed && !res.writableEnded) res.end();
   } catch (error) {
+    if (activeGeneration.abortController.signal.aborted) {
+      endStoppedGeneration();
+      return;
+    }
     console.error("Message stream failed", error);
     const failureMessage =
       error instanceof ApiError ? error.message : "Message stream failed";
@@ -939,7 +974,7 @@ const CreateMessage = asyncHandler(async (req, res) => {
     });
     if (!res.destroyed && !res.writableEnded) res.end();
   }
-  finishActiveGeneration(session.id);
+  finishGeneration();
 });
 
 export {

@@ -174,9 +174,6 @@ const MessageBubble = memo(function MessageBubble({
                 setMoreActionsOpen(false);
               }
             }}
-            onFocus={() => setMoreActionsOpen(true)}
-            onMouseEnter={() => setMoreActionsOpen(true)}
-            onMouseLeave={() => setMoreActionsOpen(false)}
             ref={moreActionsRef}
           >
             <button
@@ -184,7 +181,7 @@ const MessageBubble = memo(function MessageBubble({
               aria-haspopup="menu"
               aria-label="More actions"
               className="inline-flex size-9 shrink-0 items-center justify-center rounded-lg text-zinc-600 transition-colors hover:bg-zinc-200/70 hover:text-zinc-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
-              onClick={() => setMoreActionsOpen(true)}
+              onClick={() => setMoreActionsOpen((current) => !current)}
               type="button"
             >
               <Ellipsis className="size-4" />

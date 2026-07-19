@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">Wisp W logo — light</title>
+  <desc id="desc">A bold geometric folded W mark in white tones on a transparent background.</desc>
+  <defs>
+    <linearGradient id="leftLight" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#dddddd"/>
+    </linearGradient>
+    <linearGradient id="rightLight" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f2f2f2"/>
+      <stop offset="1" stop-color="#ffffff"/>
+    </linearGradient>
+    <linearGradient id="foldLight" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#d6d6d6"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Left outer stroke -->
+  <path d="M70 92H150L244 354H181L70 92Z" fill="url(#leftLight)"/>
+
+  <!-- Rising center stroke -->
+  <path d="M181 354L251 160H316L244 354H181Z" fill="url(#foldLight)"/>
+
+  <!-- Falling center/right stroke -->
+  <path d="M251 160H316L379 354H316L251 160Z" fill="url(#rightLight)"/>
+
+  <!-- Right outer stroke -->
+  <path d="M316 354L410 92H490L379 354H316Z" fill="url(#leftLight)"/>
+
+  <!-- Subtle fold shadow -->
+  <path d="M251 160H316L300 205L251 160Z" fill="#bdbdbd" opacity=".38"/>
+</svg>

@@ -12,14 +12,15 @@ datasource db {
 }
 
 model User {
-  id        String     @id @default(uuid())
-  fullname  String
-  email     String     @unique
-  avatar    String?
-  session   Sessions[]
-  projects  Project[]
-  createdAt DateTime   @default(now())
-  provider  String
+  id             String          @id @default(uuid())
+  fullname       String
+  email          String          @unique
+  avatar         String?
+  session        Sessions[]
+  projects       Project[]
+  savedResponses SavedResponse[]
+  createdAt      DateTime        @default(now())
+  provider       String
 }
 
 model Project {
@@ -70,4 +71,19 @@ model Messages {
   sessiondata       Sessions    @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
   @@index([sessionId, createdAt])
+}
+
+model SavedResponse {
+  id              String   @id @default(uuid())
+  owner           String
+  user            User     @relation(fields: [owner], references: [id], onDelete: Cascade)
+  sourceMessageId String
+  sourceSessionId String
+  sourceChatTitle String
+  content         String   @db.Text
+  model           String?
+  createdAt       DateTime @default(now())
+
+  @@unique([owner, sourceMessageId])
+  @@index([owner, createdAt])
 }
