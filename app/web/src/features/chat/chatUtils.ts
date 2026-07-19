@@ -75,7 +75,30 @@ export const isSensitiveAttachment = (file: File) =>
 export const formatFileSize = (bytes: number) =>
   bytes < 1_000 ? `${bytes} B` : `${Math.ceil(bytes / 1_000)} KB`;
 
-export const useDebouncedValue = <Value,>(value: Value, delay: number) => {
+export const getUserInitials = (fullname?: string) =>
+  fullname
+    ?.split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join("") || "U";
+
+export const getSafeAvatarUrl = (avatar?: string | null) => {
+  if (!avatar || typeof window === "undefined") return null;
+
+  try {
+    const url = new URL(avatar, window.location.origin);
+    if (url.protocol === "https:" || url.origin === window.location.origin) {
+      return url.href;
+    }
+  } catch {
+    // Invalid or unsafe avatar URLs fall back to user initials.
+  }
+
+  return null;
+};
+
+export const useDebouncedValue = <Value>(value: Value, delay: number) => {
   const [debouncedValue, setDebouncedValue] = useState(value);
 
   useEffect(() => {

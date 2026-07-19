@@ -50,7 +50,12 @@ import type {
   SessionGroup,
   SessionPage,
 } from "../chatTypes";
-import { formatResponseTime, useDebouncedValue } from "../chatUtils";
+import {
+  formatResponseTime,
+  getSafeAvatarUrl,
+  getUserInitials,
+  useDebouncedValue,
+} from "../chatUtils";
 import { IconButton } from "./ChatPrimitives";
 import { MemorySettingsDialog } from "./MemorySettingsDialog";
 
@@ -68,8 +73,9 @@ const SidebarItem = ({
   onClick?: () => void;
 }) => (
   <button
-    className={`flex h-10 w-full items-center rounded-lg text-sm text-zinc-800 transition-colors hover:bg-zinc-200/70 disabled:cursor-not-allowed disabled:opacity-50 dark:text-zinc-200 dark:hover:bg-zinc-800 ${collapsed ? "justify-center px-0" : "gap-3 px-3"
-      }`}
+    className={`flex h-10 w-full items-center rounded-lg text-sm text-zinc-800 transition-colors hover:bg-zinc-200/70 disabled:cursor-not-allowed disabled:opacity-50 dark:text-zinc-200 dark:hover:bg-zinc-800 ${
+      collapsed ? "justify-center px-0" : "gap-3 px-3"
+    }`}
     disabled={disabled}
     onClick={onClick}
     title={collapsed ? label : undefined}
@@ -163,7 +169,11 @@ const ProjectSection = ({
           onClick={() => setShowForm((current) => !current)}
           type="button"
         >
-          {showForm ? <X className="size-3.5" /> : <Plus className="size-3.5" />}
+          {showForm ? (
+            <X className="size-3.5" />
+          ) : (
+            <Plus className="size-3.5" />
+          )}
         </button>
       </div>
 
@@ -190,10 +200,11 @@ const ProjectSection = ({
 
       <div className="space-y-0.5">
         <button
-          className={`flex h-9 w-full items-center gap-2 rounded-lg px-3 text-left text-sm transition-colors ${selectedProjectId === null
-            ? "bg-zinc-200 text-zinc-950 dark:bg-zinc-800 dark:text-zinc-50"
-            : "text-zinc-700 hover:bg-zinc-200/70 dark:text-zinc-300 dark:hover:bg-zinc-800/80"
-            }`}
+          className={`flex h-9 w-full items-center gap-2 rounded-lg px-3 text-left text-sm transition-colors ${
+            selectedProjectId === null
+              ? "bg-zinc-200 text-zinc-950 dark:bg-zinc-800 dark:text-zinc-50"
+              : "text-zinc-700 hover:bg-zinc-200/70 dark:text-zinc-300 dark:hover:bg-zinc-800/80"
+          }`}
           onClick={() => onSelect(null)}
           type="button"
         >
@@ -249,10 +260,11 @@ const ProjectSection = ({
                 ref={openMenuId === project.id ? openMenuRef : undefined}
               >
                 <button
-                  className={`flex h-9 w-full items-center gap-2 rounded-lg pl-3 pr-16 text-left text-sm transition-colors ${selectedProjectId === project.id
-                    ? "bg-zinc-200 text-zinc-950 dark:bg-zinc-800 dark:text-zinc-50"
-                    : "text-zinc-700 hover:bg-zinc-200/70 dark:text-zinc-300 dark:hover:bg-zinc-800/80"
-                    }`}
+                  className={`flex h-9 w-full items-center gap-2 rounded-lg pl-3 pr-16 text-left text-sm transition-colors ${
+                    selectedProjectId === project.id
+                      ? "bg-zinc-200 text-zinc-950 dark:bg-zinc-800 dark:text-zinc-50"
+                      : "text-zinc-700 hover:bg-zinc-200/70 dark:text-zinc-300 dark:hover:bg-zinc-800/80"
+                  }`}
                   onClick={() => {
                     setOpenMenuId(null);
                     setConfirmDeleteId(null);
@@ -431,10 +443,11 @@ const ChatHistory = ({
                   ref={openMenuId === chat.id ? openMenuRef : undefined}
                 >
                   <button
-                    className={`flex h-9 w-full items-center rounded-lg pl-3 pr-9 text-left text-sm transition-colors ${activeChatId === chat.id
-                      ? "bg-zinc-200 text-zinc-950 dark:bg-zinc-800 dark:text-zinc-50"
-                      : "text-zinc-700 hover:bg-zinc-200/70 dark:text-zinc-300 dark:hover:bg-zinc-800/80"
-                      }`}
+                    className={`flex h-9 w-full items-center rounded-lg pl-3 pr-9 text-left text-sm transition-colors ${
+                      activeChatId === chat.id
+                        ? "bg-zinc-200 text-zinc-950 dark:bg-zinc-800 dark:text-zinc-50"
+                        : "text-zinc-700 hover:bg-zinc-200/70 dark:text-zinc-300 dark:hover:bg-zinc-800/80"
+                    }`}
                     onClick={() => {
                       setOpenMenuId(null);
                       onSelect(chat.id);
@@ -618,10 +631,11 @@ export const ChatActionDialog = ({
               Cancel
             </button>
             <button
-              className={`h-10 rounded-xl px-4 text-sm font-semibold text-white transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${isRename
-                ? "bg-zinc-900 hover:bg-zinc-700 dark:bg-white dark:text-zinc-950 dark:hover:bg-zinc-200"
-                : "bg-red-600 hover:bg-red-700"
-                }`}
+              className={`h-10 rounded-xl px-4 text-sm font-semibold text-white transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+                isRename
+                  ? "bg-zinc-900 hover:bg-zinc-700 dark:bg-white dark:text-zinc-950 dark:hover:bg-zinc-200"
+                  : "bg-red-600 hover:bg-red-700"
+              }`}
               disabled={busy || (isRename && !canRename)}
               type="submit"
             >
@@ -649,10 +663,7 @@ export const SearchChatsDialog = ({
 }) => {
   const [query, setQuery] = useState("");
   const normalizedQuery = query.trim();
-  const debouncedQuery = useDebouncedValue(
-    normalizedQuery,
-    SEARCH_DEBOUNCE_MS,
-  );
+  const debouncedQuery = useDebouncedValue(normalizedQuery, SEARCH_DEBOUNCE_MS);
   const searchQuery = useQuery<SessionPage, Error>({
     queryKey: sessionQueryKeys.search(debouncedQuery),
     queryFn: ({ signal }) =>
@@ -752,6 +763,7 @@ export const LibraryDialog = ({
   onClose,
   onDelete,
   onLoadMore,
+  onOpenSession,
   onQueryChange,
   query,
   responses,
@@ -764,6 +776,7 @@ export const LibraryDialog = ({
   onClose: () => void;
   onDelete: (savedResponseId: string) => void;
   onLoadMore: () => void;
+  onOpenSession: (sessionId: string) => void;
   onQueryChange: (query: string) => void;
   query: string;
   responses: SavedResponse[];
@@ -855,20 +868,27 @@ export const LibraryDialog = ({
             <div className="space-y-3">
               {responses.map((response) => (
                 <article
-                  className="rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950"
+                  className="group relative rounded-2xl border border-zinc-200 bg-white p-4 transition-colors hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950 dark:hover:bg-zinc-900/70"
                   key={response.id}
                 >
                   <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+                    <button
+                      className="min-w-0 flex-1 rounded-lg text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
+                      onClick={() => onOpenSession(response.sourceSessionId)}
+                      type="button"
+                    >
+                      <p className="truncate text-sm font-semibold text-zinc-900 group-hover:text-zinc-950 dark:text-zinc-100 dark:group-hover:text-white">
                         {response.sourceChatTitle}
                       </p>
                       <p className="mt-0.5 text-xs text-zinc-500">
-                        {[response.model, formatResponseTime(response.createdAt, Date.now())]
+                        {[
+                          response.model,
+                          formatResponseTime(response.createdAt, Date.now()),
+                        ]
                           .filter(Boolean)
                           .join(" · ")}
                       </p>
-                    </div>
+                    </button>
                     <div className="flex shrink-0 items-center gap-1">
                       <IconButton
                         label="Copy saved response"
@@ -889,9 +909,13 @@ export const LibraryDialog = ({
                       </IconButton>
                     </div>
                   </div>
-                  <div className="subtle-scrollbar mt-3 max-h-52 overflow-y-auto whitespace-pre-wrap rounded-xl bg-zinc-50 p-3 text-sm leading-6 text-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">
+                  <button
+                    className="subtle-scrollbar mt-3 block max-h-52 w-full cursor-pointer overflow-y-auto whitespace-pre-wrap rounded-xl bg-zinc-50 p-3 text-left text-sm leading-6 text-zinc-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 dark:bg-zinc-900 dark:text-zinc-300"
+                    onClick={() => onOpenSession(response.sourceSessionId)}
+                    type="button"
+                  >
                     {response.content}
-                  </div>
+                  </button>
                 </article>
               ))}
               {hasMore && (
@@ -910,29 +934,6 @@ export const LibraryDialog = ({
       </section>
     </div>
   );
-};
-
-const getUserInitials = (fullname?: string) =>
-  fullname
-    ?.split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase())
-    .join("") || "U";
-
-const getSafeAvatarUrl = (avatar?: string | null) => {
-  if (!avatar || typeof window === "undefined") return null;
-
-  try {
-    const url = new URL(avatar, window.location.origin);
-    if (url.protocol === "https:" || url.origin === window.location.origin) {
-      return url.href;
-    }
-  } catch {
-    // Invalid or unsafe avatar URLs fall back to user initials.
-  }
-
-  return null;
 };
 
 const CollapsedProfile = () => {
@@ -1156,8 +1157,9 @@ const SidebarComponent = ({
     )}
 
     <aside
-      className={`fixed inset-y-0 left-0 z-40 flex border-r border-zinc-200 bg-zinc-100 transition-[width,transform] duration-200 dark:border-zinc-800 dark:bg-zinc-950 lg:relative lg:translate-x-0 ${collapsed ? "lg:w-[68px]" : "lg:w-[280px]"
-        } ${mobileOpen ? "w-[280px] translate-x-0" : "w-[280px] -translate-x-full"}`}
+      className={`fixed inset-y-0 left-0 z-40 flex border-r border-zinc-200 bg-zinc-100 transition-[width,transform] duration-200 dark:border-zinc-800 dark:bg-zinc-950 lg:relative lg:translate-x-0 ${
+        collapsed ? "lg:w-[68px]" : "lg:w-[280px]"
+      } ${mobileOpen ? "w-[280px] translate-x-0" : "w-[280px] -translate-x-full"}`}
     >
       <div className="flex min-w-0 flex-1 flex-col">
         <div
@@ -1236,11 +1238,7 @@ const SidebarComponent = ({
               scrollArea.scrollHeight -
               scrollArea.scrollTop -
               scrollArea.clientHeight;
-            if (
-              distanceFromBottom < 160 &&
-              hasMoreChats &&
-              !loadingMoreChats
-            ) {
+            if (distanceFromBottom < 160 && hasMoreChats && !loadingMoreChats) {
               onLoadMoreChats();
             }
           }}

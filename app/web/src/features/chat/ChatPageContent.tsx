@@ -1242,6 +1242,14 @@ export const ChatPageContent = () => {
     },
     [openChat, setActiveDialog],
   );
+  const selectLibrarySession = useCallback(
+    (sessionId: string) => {
+      setActiveDialog(null);
+      setLibrarySearch("");
+      openChat(sessionId);
+    },
+    [openChat, setActiveDialog],
+  );
   const deleteSavedResponse = useCallback(
     (savedResponseId: string) =>
       deleteSavedResponseById(savedResponseId),
@@ -1391,6 +1399,7 @@ export const ChatPageContent = () => {
           onClose={closeDialog}
           onDelete={deleteSavedResponse}
           onLoadMore={() => void libraryQuery.fetchNextPage()}
+          onOpenSession={selectLibrarySession}
           onQueryChange={setLibrarySearch}
           query={librarySearch}
           responses={savedResponses}

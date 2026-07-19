@@ -25,6 +25,7 @@ import useUserStore, {
 } from "@/UserStore";
 import { apiRequest, fetchMemoryPage, memoryQueryKeys } from "../chatApi";
 import type { MemoryPages } from "../chatTypes";
+import { getSafeAvatarUrl, getUserInitials } from "../chatUtils";
 import { useChatClientStore } from "../state/chatClientStore";
 import { IconButton } from "./ChatPrimitives";
 
@@ -72,6 +73,7 @@ export const MemorySettingsDialog = ({ onClose }: { onClose: () => void }) => {
   const queryClient = useQueryClient();
   const currentUser = useUserStore((state) => state.currentUser);
   const setCurrentUser = useUserStore((state) => state.setCurrentUser);
+  const avatarUrl = getSafeAvatarUrl(currentUser?.avatar);
   const theme = useChatClientStore((state) => state.theme);
   const setTheme = useChatClientStore((state) => state.setTheme);
   const memoriesQuery = useInfiniteQuery({
@@ -302,14 +304,19 @@ export const MemorySettingsDialog = ({ onClose }: { onClose: () => void }) => {
             {activeSection === "account" && (
               <section className="py-5 sm:py-6">
                 <div className="flex items-center gap-4 border-b border-zinc-200 pb-5 dark:border-zinc-700">
-                  <span className="flex size-14 shrink-0 items-center justify-center rounded-full bg-zinc-900 text-base font-semibold text-white dark:bg-zinc-100 dark:text-zinc-950">
-                    {currentUser?.fullname
-                      ?.split(/\s+/)
-                      .filter(Boolean)
-                      .slice(0, 2)
-                      .map((part) => part[0]?.toUpperCase())
-                      .join("") || "U"}
-                  </span>
+                  {avatarUrl ? (
+                    <img
+                      alt=""
+                      className="size-14 shrink-0 rounded-full object-cover"
+                      decoding="async"
+                      referrerPolicy="no-referrer"
+                      src={avatarUrl}
+                    />
+                  ) : (
+                    <span className="flex size-14 shrink-0 items-center justify-center rounded-full bg-zinc-900 text-base font-semibold text-white dark:bg-zinc-100 dark:text-zinc-950">
+                      {getUserInitials(currentUser?.fullname)}
+                    </span>
+                  )}
                   <div className="min-w-0">
                     <h3 className="truncate text-base font-semibold text-zinc-900 dark:text-zinc-100">
                       {currentUser?.fullname || "Wisp user"}

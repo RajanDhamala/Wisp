@@ -10,14 +10,7 @@ import {
   ThumbsUp,
   Trash2,
 } from "lucide-react";
-import {
-  memo,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Message, ModelOption, ResponseReaction } from "../chatTypes";
 import { formatResponseTime } from "../chatUtils";
 import { AssistantContent } from "./ChatPreview";
@@ -88,7 +81,7 @@ const MessageBubble = memo(function MessageBubble({
           <div className="whitespace-pre-wrap rounded-3xl bg-zinc-100 px-4 py-2.5 text-[15px] leading-6 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100">
             {message.content}
           </div>
-          <div className="mt-1 flex justify-end opacity-0 transition-opacity group-hover:opacity-100">
+          <div className="mt-1 flex justify-end opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100 md:focus-within:opacity-100">
             <IconButton label="Copy message" onClick={copyMessage}>
               {copied ? (
                 <Check className="size-4" />
@@ -121,7 +114,13 @@ const MessageBubble = memo(function MessageBubble({
         />
       </div>
       {!streaming && message.content && (
-        <div className="mt-3 flex items-center gap-0.5 opacity-70 transition-opacity group-hover:opacity-100">
+        <div
+          className={`mt-3 flex items-center gap-0.5 transition-opacity ${
+            moreActionsOpen
+              ? "opacity-100"
+              : "opacity-100 md:opacity-70 md:group-hover:opacity-100 md:focus-within:opacity-100"
+          }`}
+        >
           <IconButton label="Copy response" onClick={copyMessage}>
             {copied ? (
               <Check className="size-4" />
@@ -137,10 +136,7 @@ const MessageBubble = memo(function MessageBubble({
             }
             label="Good response"
             onClick={() =>
-              onReactionChange(
-                message.id,
-                reaction === "like" ? null : "like",
-              )
+              onReactionChange(message.id, reaction === "like" ? null : "like")
             }
             pressed={reaction === "like"}
           >
@@ -285,15 +281,20 @@ const BranchResponseCard = memo(function BranchResponseCard({
 
   return (
     <article
-      className={`flex min-h-0 min-w-0 flex-col overflow-hidden border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-950 ${fullscreen
-        ? "h-full rounded-2xl"
-        : "h-full w-[min(88vw,26rem)] shrink-0 snap-start rounded-2xl"
-        }`}
+      className={`flex min-h-0 min-w-0 flex-col overflow-hidden border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-950 ${
+        fullscreen
+          ? "h-full rounded-2xl"
+          : "h-full w-[min(88vw,26rem)] shrink-0 snap-start rounded-2xl"
+      }`}
     >
       <div className="flex shrink-0 items-center justify-between gap-3 border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
         <div className="flex min-w-0 items-center gap-2.5">
           <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-200">
-            <ModelLogo className="size-[18px]" label={label} modelId={modelId} />
+            <ModelLogo
+              className="size-[18px]"
+              label={label}
+              modelId={modelId}
+            />
           </span>
           <div className="min-w-0">
             <p className="truncate text-sm font-semibold text-zinc-900 dark:text-zinc-100">
@@ -308,7 +309,9 @@ const BranchResponseCard = memo(function BranchResponseCard({
           </div>
         </div>
         <IconButton
-          label={fullscreen ? `Exit ${label} fullscreen` : `View ${label} fullscreen`}
+          label={
+            fullscreen ? `Exit ${label} fullscreen` : `View ${label} fullscreen`
+          }
           onClick={() => onToggleFullscreen(fullscreen ? null : message.id)}
         >
           {fullscreen ? (
@@ -396,18 +399,18 @@ const ConversationMessagesComponent = ({
     message.model
       ? (modelLabels.get(message.model) ?? message.model)
       : "Wisp model";
-  const updateReaction = useCallback((
-    messageId: string,
-    reaction: ResponseReaction,
-  ) => {
-    setResponseReactions((current) => {
-      if (reaction) return { ...current, [messageId]: reaction };
-      if (!(messageId in current)) return current;
-      const next = { ...current };
-      delete next[messageId];
-      return next;
-    });
-  }, []);
+  const updateReaction = useCallback(
+    (messageId: string, reaction: ResponseReaction) => {
+      setResponseReactions((current) => {
+        if (reaction) return { ...current, [messageId]: reaction };
+        if (!(messageId in current)) return current;
+        const next = { ...current };
+        delete next[messageId];
+        return next;
+      });
+    },
+    [],
+  );
 
   useEffect(() => {
     const interval = window.setInterval(
@@ -452,7 +455,10 @@ const ConversationMessagesComponent = ({
             streamingIds.has(message.id),
           );
           return (
-            <section className="w-full" key={group.map(({ id }) => id).join("-")}>
+            <section
+              className="w-full"
+              key={group.map(({ id }) => id).join("-")}
+            >
               <div className="mb-3 flex items-center justify-between gap-3 text-xs font-medium text-zinc-500 dark:text-zinc-400">
                 <span className="flex items-center gap-2">
                   <GitBranch className="size-4" />
@@ -467,9 +473,7 @@ const ConversationMessagesComponent = ({
                     : "Scroll sideways · each response scrolls independently"}
                 </span>
               </div>
-              <div
-                className="subtle-scrollbar flex h-[58dvh] snap-x snap-mandatory items-stretch gap-3 overflow-x-auto overscroll-x-contain pb-2 lg:h-[calc(100dvh-14.5rem)] lg:min-h-[30rem]"
-              >
+              <div className="subtle-scrollbar flex h-[58dvh] snap-x snap-mandatory items-stretch gap-3 overflow-x-auto overscroll-x-contain pb-2 lg:h-[calc(100dvh-14.5rem)] lg:min-h-[30rem]">
                 {group.map((message) => {
                   const streaming = streamingIds.has(message.id);
                   return (
