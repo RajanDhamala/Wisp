@@ -3,11 +3,13 @@ import { z } from "zod";
 import asyncHandler from "../Utils/AsyncHandler.js";
 import ApiError from "../Utils/ApiError.js";
 import ApiResponse from "../Utils/ApiResponse.js";
+import { startExternalApiCallLog } from "../Utils/ExternalApiLogger.js";
 import prisma from "../Utils/PrismaProvider.js";
 import { enqueueMemoryExtraction } from "../Queues/MemoryQueue.js";
 import {
   FALLBACK_MODEL,
   getModelProvider,
+  MAX_PROVIDER_OUTPUT_TOKENS,
   MODEL_CATALOG,
   MODEL_PROVIDER,
   resolveModel,
@@ -29,6 +31,17 @@ const PROVIDERS = Object.freeze({
 });
 const MAX_CONTEXT_MESSAGES = 40;
 const MAX_ATTACHMENT_CHARACTERS = 200_000;
+const INITIAL_PROVIDER_RESPONSE_TIMEOUT_MS = 7_000;
+const INITIAL_PROVIDER_TIMEOUT_MESSAGE =
+  "The model did not start responding within 7 seconds.";
+const OPENROUTER_WEB_SEARCH_TOOL = Object.freeze({
+  type: "openrouter:web_search",
+  parameters: Object.freeze({
+    engine: "parallel",
+    max_results: 3,
+    max_total_results: 3,
+  }),
+});
 const ACTIVE_GENERATION_TTL_MS = 30 * 60 * 1_000;
 const DEFAULT_SESSION_PAGE_SIZE = 15;
 const MAX_SESSION_PAGE_SIZE = 50;
@@ -144,6 +157,7 @@ const createMessageSchema = z
       .max(4)
       .optional(),
     attachments: z.array(attachmentSchema).max(5).default([]),
+    webSearch: z.boolean().default(false),
   })
   .refine((data) => data.content || data.attachments.length, {
     message: "A message or attachment is required",
@@ -282,6 +296,7 @@ const SYSTEM_PROMPT = [
   "body { margin: 0; }",
   "```",
   "Never output tsx file=/src/TestPage.tsx or another file header as a bare line without the opening triple backticks.",
+  "Return only the final response. Never expose internal analysis, scratchpad, chain-of-thought, or planning notes.",
   "Every runnable component file must use a default export. The component and filename may have any sensible name; the client creates the preview entry automatically.",
   "Use React and Tailwind CSS utility classes. Supported UI packages are lucide-react, motion (via motion/react), framer-motion, gsap, and @gsap/react; do not reference missing local assets or other unsupported packages.",
   "The preview theme is isolated from Wisp. Generated apps must own their light/dark state; for dark mode, toggle a dark class inside the generated app and provide explicit light and dark page backgrounds instead of relying on the host theme.",
@@ -469,10 +484,13 @@ const streamProviderResponse = async (
   selectedModel,
   streamModel = selectedModel,
   onToken,
+  requestLifecycle,
 ) => {
   const reader = response.body?.getReader();
 
   if (!reader) {
+    requestLifecycle?.fail(new Error("Provider returned an empty response stream"));
+    requestLifecycle?.dispose();
     throw new ApiError(502, "Provider returned an empty response stream");
   }
 
@@ -483,6 +501,29 @@ const streamProviderResponse = async (
   let finishReason = null;
   let providerModel = selectedModel;
   let providerDone = false;
+  const citations = new Map();
+
+  const collectCitations = (annotations) => {
+    if (!Array.isArray(annotations)) return;
+
+    for (const annotation of annotations) {
+      if (!annotation || annotation.type !== "url_citation") continue;
+      const citation = annotation.url_citation ?? annotation;
+      if (typeof citation.url !== "string") continue;
+
+      try {
+        const url = new URL(citation.url);
+        if (!["http:", "https:"].includes(url.protocol)) continue;
+        const title =
+          typeof citation.title === "string" && citation.title.trim()
+            ? citation.title.trim()
+            : url.hostname;
+        citations.set(url.href, title);
+      } catch {
+        continue;
+      }
+    }
+  };
 
   const consumeLine = (rawLine) => {
     const line = rawLine.replace(/\r$/, "").trim();
@@ -490,10 +531,13 @@ const streamProviderResponse = async (
 
     const payload = line.slice(5).trim();
     if (!payload) return false;
+    requestLifecycle?.markStarted();
     if (payload === "[DONE]") return true;
 
     const chunk = JSON.parse(payload);
     const token = chunk.choices?.[0]?.delta?.content ?? "";
+    collectCitations(chunk.choices?.[0]?.delta?.annotations);
+    collectCitations(chunk.choices?.[0]?.message?.annotations);
 
     if (token) {
       content += token;
@@ -510,30 +554,55 @@ const streamProviderResponse = async (
     return false;
   };
 
-  while (!providerDone) {
-    const { done, value } = await reader.read();
-    buffer += decoder.decode(value, { stream: !done });
+  try {
+    while (!providerDone) {
+      const { done, value } = await reader.read();
+      buffer += decoder.decode(value, { stream: !done });
 
-    let newlineIndex = buffer.indexOf("\n");
-    while (newlineIndex !== -1) {
-      const line = buffer.slice(0, newlineIndex);
-      buffer = buffer.slice(newlineIndex + 1);
-      providerDone = consumeLine(line);
-      if (providerDone) break;
-      newlineIndex = buffer.indexOf("\n");
+      let newlineIndex = buffer.indexOf("\n");
+      while (newlineIndex !== -1) {
+        const line = buffer.slice(0, newlineIndex);
+        buffer = buffer.slice(newlineIndex + 1);
+        providerDone = consumeLine(line);
+        if (providerDone) break;
+        newlineIndex = buffer.indexOf("\n");
+      }
+
+      if (done) {
+        if (buffer.trim()) providerDone = consumeLine(buffer);
+        break;
+      }
     }
 
-    if (done) {
-      if (buffer.trim()) providerDone = consumeLine(buffer);
-      break;
+    if (!content.trim()) {
+      throw new ApiError(502, "Provider completed without message content");
     }
-  }
 
-  if (!content.trim()) {
-    throw new ApiError(502, "Provider completed without message content");
-  }
+    const newCitations = [...citations].filter(([url]) =>
+      !content.includes(url),
+    );
+    if (newCitations.length) {
+      const citationText = `\n\nSources:\n${newCitations
+        .map(
+          ([url, title]) =>
+            `- [${title.replace(/[\\[\]]/g, "\\$&")}](${url})`,
+        )
+        .join("\n")}`;
+      content += citationText;
+      onToken?.(citationText);
+      writeEvent(res, "token", { model: streamModel, token: citationText });
+    }
 
-  return { content, usage, finishReason, providerModel };
+    return { content, usage, finishReason, providerModel };
+  } catch (error) {
+    requestLifecycle?.fail(error);
+    if (requestLifecycle?.timedOut()) {
+      throw new ApiError(504, INITIAL_PROVIDER_TIMEOUT_MESSAGE);
+    }
+    throw error;
+  } finally {
+    requestLifecycle?.dispose();
+  }
 };
 
 const CreateSession = asyncHandler(async (req, res) => {
@@ -699,7 +768,7 @@ const ListModels = asyncHandler(async (_req, res) => {
 });
 
 const CreateMessage = asyncHandler(async (req, res) => {
-  const { attachments, content, model, models } = parseBody(
+  const { attachments, content, model, models, webSearch } = parseBody(
     createMessageSchema,
     req.body,
   );
@@ -710,6 +779,12 @@ const CreateMessage = asyncHandler(async (req, res) => {
     throw new ApiError(400, "Choose at least two different models");
   }
   const selectedModel = selectedModels[0];
+  if (webSearch && selectedModels.length > 1) {
+    throw new ApiError(400, "Web search is unavailable in branching mode");
+  }
+  if (webSearch && getModelProvider(selectedModel) !== "openrouter") {
+    throw new ApiError(400, "Web search is unavailable for this model");
+  }
   const usedCatalogFallback =
     !models && typeof model === "string" && model !== selectedModel;
   const session = await findOwnedSession(req.params.sessionId, req.user.id);
@@ -771,11 +846,39 @@ const CreateMessage = asyncHandler(async (req, res) => {
     storedContent;
   const buildProviderMessages = (modelId) => [
     { role: "system", content: SYSTEM_PROMPT },
+    ...(webSearch
+      ? [
+          {
+            role: "system",
+            content:
+              "Web search is enabled for this request. Use it for current or externally verifiable information and cite sources with Markdown links.",
+          },
+        ]
+      : []),
     ...(memoryContext
       ? [{ role: "system", content: memoryContext }]
       : []),
     ...selectContextForModel(orderedContext, modelId, providerUserContent),
   ];
+  const releaseTokenReservation = async (reservation) => {
+    if (!reservation) return;
+    try {
+      await req.tokenQuota.release(reservation);
+    } catch (error) {
+      console.error("Could not release token reservation", error.message);
+    }
+  };
+  const settleTokenReservation = async (reservation, result) => {
+    if (!reservation) return;
+    try {
+      await req.tokenQuota.settle(reservation, {
+        content: result.content,
+        usage: result.usage,
+      });
+    } catch (error) {
+      console.error("Could not settle token reservation", error.message);
+    }
+  };
   const scheduleMemoryExtraction = (throughMessageId) => {
     if (!req.user.memoryAutoEnabled) return;
     void enqueueMemoryExtraction({
@@ -786,26 +889,126 @@ const CreateMessage = asyncHandler(async (req, res) => {
       console.error("Could not queue memory extraction", error.message);
     });
   };
-  const requestProvider = (modelId) => {
+  const requestProvider = async (modelId) => {
     const provider = getProviderConfig(modelId);
-
-    return fetch(provider.url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${provider.apiKey}`,
-      },
-      body: JSON.stringify({
-        model: modelId,
-        messages: buildProviderMessages(modelId),
-        ...(provider.id === "deepseek"
-          ? { thinking: { type: "disabled" } }
-          : { reasoning: { effort: "none" } }),
-        stream: true,
-        stream_options: { include_usage: true },
-      }),
-      signal: activeGeneration.abortController.signal,
+    const providerMessages = buildProviderMessages(modelId);
+    const quotaReservation = await req.tokenQuota.reserve({
+      maxOutputTokens: MAX_PROVIDER_OUTPUT_TOKENS,
+      messages: providerMessages,
+      model: modelId,
+      requestId: `${activeGeneration.id}:${modelId}`,
     });
+    const providerAbortController = new AbortController();
+    let initialResponseStarted = false;
+    let initialResponseTimedOut = false;
+    let responseStatusCode = null;
+    const finishExternalApiCallLog = startExternalApiCallLog({
+      model: modelId,
+      provider: provider.id,
+      requestId: activeGeneration.id,
+      requestKind: "chat_generation",
+      route: "/session/:sessionId/messages",
+      sessionId: session.id,
+      streaming: true,
+      userId: req.user.id,
+    });
+    const abortProviderRequest = () => providerAbortController.abort();
+    if (activeGeneration.abortController.signal.aborted) {
+      abortProviderRequest();
+    } else {
+      activeGeneration.abortController.signal.addEventListener(
+        "abort",
+        abortProviderRequest,
+        { once: true },
+      );
+    }
+    const initialResponseTimeout = setTimeout(() => {
+      if (initialResponseStarted) return;
+      initialResponseTimedOut = true;
+      finishExternalApiCallLog({
+        errorName: "TimeoutError",
+        outcome: "timeout",
+        statusCode: responseStatusCode,
+      });
+      providerAbortController.abort();
+    }, INITIAL_PROVIDER_RESPONSE_TIMEOUT_MS);
+    const clearInitialResponseTimeout = () =>
+      clearTimeout(initialResponseTimeout);
+    const requestLifecycle = {
+      dispose: () => {
+        clearInitialResponseTimeout();
+        activeGeneration.abortController.signal.removeEventListener(
+          "abort",
+          abortProviderRequest,
+        );
+      },
+      fail: (error) => {
+        if (initialResponseStarted || initialResponseTimedOut) return;
+        clearInitialResponseTimeout();
+        finishExternalApiCallLog({
+          errorName: error instanceof Error ? error.name : "UnknownError",
+          outcome: activeGeneration.abortController.signal.aborted
+            ? "aborted"
+            : "network_error",
+          statusCode: responseStatusCode,
+        });
+      },
+      markStarted: () => {
+        if (initialResponseStarted || initialResponseTimedOut) return;
+        initialResponseStarted = true;
+        clearInitialResponseTimeout();
+        finishExternalApiCallLog({
+          outcome: "success",
+          statusCode: responseStatusCode,
+        });
+      },
+      timedOut: () => initialResponseTimedOut,
+    };
+
+    try {
+      const response = await fetch(provider.url, {
+        method: "POST",
+        headers: {
+          Accept: "text/event-stream",
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${provider.apiKey}`,
+        },
+        body: JSON.stringify({
+          model: modelId,
+          messages: providerMessages,
+          max_tokens: MAX_PROVIDER_OUTPUT_TOKENS,
+          ...(provider.id === "deepseek"
+            ? { thinking: { type: "disabled" } }
+            : { reasoning: { effort: "none" } }),
+          ...(webSearch
+            ? { tools: [OPENROUTER_WEB_SEARCH_TOOL] }
+            : {}),
+          stream: true,
+          stream_options: { include_usage: true },
+        }),
+        signal: providerAbortController.signal,
+      });
+      responseStatusCode = response.status;
+
+      if (!response.ok) {
+        initialResponseStarted = true;
+        clearInitialResponseTimeout();
+        finishExternalApiCallLog({
+          outcome: "http_error",
+          statusCode: response.status,
+        });
+      }
+
+      return { quotaReservation, requestLifecycle, response };
+    } catch (error) {
+      requestLifecycle.fail(error);
+      requestLifecycle.dispose();
+      await releaseTokenReservation(quotaReservation);
+      if (initialResponseTimedOut) {
+        throw new ApiError(504, INITIAL_PROVIDER_TIMEOUT_MESSAGE);
+      }
+      throw error;
+    }
   };
 
   if (selectedModels.length > 1) {
@@ -819,12 +1022,21 @@ const CreateMessage = asyncHandler(async (req, res) => {
 
     const runBranch = async (branchModel) => {
       writeEvent(res, "branch_start", { model: branchModel });
+      let quotaReservation = null;
 
       try {
-        const providerResponse = await requestProvider(branchModel);
-        const providerError = providerResponse.ok
-          ? ""
-          : await providerResponse.text();
+        const providerRequest = await requestProvider(branchModel);
+        const providerResponse = providerRequest.response;
+        quotaReservation = providerRequest.quotaReservation;
+        let providerError = "";
+
+        if (!providerResponse.ok) {
+          try {
+            providerError = await providerResponse.text();
+          } finally {
+            providerRequest.requestLifecycle.dispose();
+          }
+        }
 
         if (!providerResponse.ok) {
           const failureMessage = getProviderFailureMessage(
@@ -848,14 +1060,18 @@ const CreateMessage = asyncHandler(async (req, res) => {
           branchModel,
           (token) =>
             appendActiveBranchToken(session.id, branchModel, token),
+          providerRequest.requestLifecycle,
         );
         updateActiveBranch(session.id, branchModel, { status: "complete" });
         writeEvent(res, "branch_complete", {
           model: branchModel,
           providerModel: result.providerModel,
         });
-        return { ...result, requestedModel: branchModel };
+        await settleTokenReservation(quotaReservation, result);
+        quotaReservation = null;
+        return { ...result, quotaReservation, requestedModel: branchModel };
       } catch (error) {
+        await releaseTokenReservation(quotaReservation);
         if (activeGeneration.abortController.signal.aborted) throw error;
         const failureMessage =
           error instanceof ApiError
@@ -876,6 +1092,7 @@ const CreateMessage = asyncHandler(async (req, res) => {
           error: failureMessage,
           finishReason: "error",
           providerModel: branchModel,
+          quotaReservation: null,
           requestedModel: branchModel,
           usage: normalizeUsage(),
         };
@@ -940,7 +1157,6 @@ const CreateMessage = asyncHandler(async (req, res) => {
         message: "The model responses finished but could not be saved",
       });
     }
-
     finishActiveGeneration(session.id, activeGeneration.id);
     if (!res.destroyed && !res.writableEnded) res.end();
     return;
@@ -948,11 +1164,22 @@ const CreateMessage = asyncHandler(async (req, res) => {
 
   let providerModel = selectedModel;
   let providerResponse;
+  let providerRequestLifecycle;
+  let providerQuotaReservation;
   let providerError = "";
 
   try {
-    providerResponse = await requestProvider(providerModel);
-    providerError = providerResponse.ok ? "" : await providerResponse.text();
+    const providerRequest = await requestProvider(providerModel);
+    providerResponse = providerRequest.response;
+    providerRequestLifecycle = providerRequest.requestLifecycle;
+    providerQuotaReservation = providerRequest.quotaReservation;
+    if (!providerResponse.ok) {
+      try {
+        providerError = await providerResponse.text();
+      } finally {
+        providerRequestLifecycle.dispose();
+      }
+    }
   } catch (error) {
     if (activeGeneration.abortController.signal.aborted) {
       endStoppedGeneration();
@@ -960,7 +1187,9 @@ const CreateMessage = asyncHandler(async (req, res) => {
     }
     console.error("Provider request could not be completed", error);
     const failureMessage =
-      "The model provider could not be reached. Please try again.";
+      error instanceof ApiError
+        ? error.message
+        : "The model provider could not be reached. Please try again.";
     const failureResponse = await persistGenerationFailure(
       session.id,
       providerModel,
@@ -968,10 +1197,13 @@ const CreateMessage = asyncHandler(async (req, res) => {
     );
     if (failureResponse) scheduleMemoryExtraction(failureResponse.id);
     finishActiveGeneration(session.id, activeGeneration.id);
-    throw new ApiError(502, failureMessage);
+    throw error instanceof ApiError
+      ? error
+      : new ApiError(502, failureMessage);
   }
 
   if (!providerResponse.ok) {
+    await releaseTokenReservation(providerQuotaReservation);
     const failureMessage = getProviderFailureMessage(
       providerModel,
       providerResponse.status,
@@ -1007,6 +1239,7 @@ const CreateMessage = asyncHandler(async (req, res) => {
     userMessage,
   });
 
+  let generationResult = null;
   try {
     const result = await streamProviderResponse(
       providerResponse,
@@ -1014,7 +1247,9 @@ const CreateMessage = asyncHandler(async (req, res) => {
       providerModel,
       selectedModel,
       (token) => appendActiveBranchToken(session.id, selectedModel, token),
+      providerRequestLifecycle,
     );
+    generationResult = result;
     updateActiveBranch(session.id, selectedModel, { status: "complete" });
     const generatedTitle =
       session.title === "New chat" ? createTitle(firstUserPrompt) : session.title;
@@ -1037,6 +1272,8 @@ const CreateMessage = asyncHandler(async (req, res) => {
         data: { title: generatedTitle, updatedAt: new Date() },
       }),
     ]);
+    await settleTokenReservation(providerQuotaReservation, result);
+    providerQuotaReservation = null;
     scheduleMemoryExtraction(assistantMessage.id);
 
     writeEvent(res, "done", {
@@ -1047,6 +1284,11 @@ const CreateMessage = asyncHandler(async (req, res) => {
     });
     if (!res.destroyed && !res.writableEnded) res.end();
   } catch (error) {
+    if (generationResult) {
+      await settleTokenReservation(providerQuotaReservation, generationResult);
+    } else {
+      await releaseTokenReservation(providerQuotaReservation);
+    }
     if (activeGeneration.abortController.signal.aborted) {
       endStoppedGeneration();
       return;

@@ -98,6 +98,29 @@ const MODEL_DEFINITIONS = Object.freeze(
       label: "MiMo V2.5",
       provider: "openrouter",
     },
+
+    {
+      capability: "Largest open reasoning model (Free)",
+      family: "nvidia",
+      id: "nvidia/nemotron-3-ultra-550b-a55b:free",
+      label: "Nemotron 3 Ultra",
+      provider: "openrouter",
+    },
+    {
+      capability: "High-performance reasoning (Free)",
+      family: "nvidia",
+      id: "nvidia/nemotron-3-super-120b-a12b:free",
+      label: "Nemotron 3 Super",
+      provider: "openrouter",
+    },
+
+    {
+      capability: "Automatically routes to the best free model",
+      family: "openrouter",
+      id: "openrouter/free",
+      label: "auto",
+      provider: "openrouter",
+    },
   ].map(Object.freeze),
 );
 
@@ -109,6 +132,7 @@ const MODEL_CATALOG = Object.freeze(
 const MODEL_PROVIDER = "DeepSeek + OpenRouter";
 const FALLBACK_MODEL = "deepseek-v4-flash";
 const MEMORY_MODEL = "deepseek-v4-flash";
+const MAX_PROVIDER_OUTPUT_TOKENS = 8_192;
 const MODEL_IDS = new Set(MODEL_CATALOG.map((model) => model.id));
 const MODEL_PROVIDERS = new Map(
   MODEL_DEFINITIONS.map(({ id, provider }) => [id, provider]),
@@ -127,6 +151,7 @@ const getModelProvider = (model) =>
 export {
   FALLBACK_MODEL,
   getModelProvider,
+  MAX_PROVIDER_OUTPUT_TOKENS,
   MEMORY_MODEL,
   MODEL_CATALOG,
   MODEL_PROVIDER,

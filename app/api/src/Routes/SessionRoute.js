@@ -1,5 +1,6 @@
 import { Router } from "express";
 import AuthUser from "../Middlewares/AuthMiddelware.js";
+import countTokenMiddle from "../Middlewares/CountTokenMiddle.js";
 import {
   CreateSession,
   ListSessions,
@@ -19,7 +20,7 @@ SessionRouter.use(AuthUser);
 
 SessionRouter.route("/").get(ListSessions).post(CreateSession);
 
-SessionRouter.post("/:sessionId/messages", CreateMessage);
+SessionRouter.post("/:sessionId/messages", countTokenMiddle, CreateMessage);
 SessionRouter.delete("/:sessionId/messages/:messageId", DeleteMessage);
 
 SessionRouter.route("/:sessionId")

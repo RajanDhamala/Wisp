@@ -9,6 +9,7 @@ import {
   MEMORY_QUEUE_PREFIX,
   setMemoryJobScheduledHandler,
 } from "../Queues/MemoryQueue.js";
+import { startExternalApiCallLog } from "../Utils/ExternalApiLogger.js";
 import prisma from "../Utils/PrismaProvider.js";
 
 const MAX_SOURCE_MESSAGES = 50;
@@ -82,37 +83,69 @@ const parseProviderJson = (content) => {
   return extractionSchema.parse(JSON.parse(normalized));
 };
 
-const requestMemoryExtraction = async ({ existingMemories, messages }) => {
+const requestMemoryExtraction = async ({
+  existingMemories,
+  messages,
+  ownerId,
+  requestId,
+  sessionId,
+}) => {
   const apiKey = process.env.DEEPSEEK_API_KEY?.trim();
   if (!apiKey) throw new Error("DEEPSEEK_API_KEY is not configured");
   const url =
     process.env.DEEPSEEK_API_URL?.trim() ||
     "https://api.deepseek.com/chat/completions";
-  const response = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: MEMORY_MODEL,
-      messages: [
-        { role: "system", content: EXTRACTION_PROMPT },
-        {
-          role: "user",
-          content: JSON.stringify({
-            existingMemories,
-            conversation: messages,
-          }),
-        },
-      ],
-      thinking: { type: "disabled" },
-      response_format: { type: "json_object" },
-      stream: false,
-      temperature: 0,
-    }),
-    signal: AbortSignal.timeout(60_000),
+  const finishExternalApiCallLog = startExternalApiCallLog({
+    model: MEMORY_MODEL,
+    provider: "deepseek",
+    requestId,
+    requestKind: "memory_extraction",
+    route: "memory-worker/extract-session-memory",
+    sessionId,
+    streaming: false,
+    userId: ownerId,
   });
+  let response;
+
+  try {
+    response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: MEMORY_MODEL,
+        messages: [
+          { role: "system", content: EXTRACTION_PROMPT },
+          {
+            role: "user",
+            content: JSON.stringify({
+              existingMemories,
+              conversation: messages,
+            }),
+          },
+        ],
+        thinking: { type: "disabled" },
+        response_format: { type: "json_object" },
+        stream: false,
+        temperature: 0,
+      }),
+      signal: AbortSignal.timeout(60_000),
+    });
+    finishExternalApiCallLog({
+      outcome: response.ok ? "success" : "http_error",
+      statusCode: response.status,
+    });
+  } catch (error) {
+    finishExternalApiCallLog({
+      errorName: error instanceof Error ? error.name : "UnknownError",
+      outcome: error instanceof Error && error.name === "TimeoutError"
+        ? "timeout"
+        : "network_error",
+    });
+    throw error;
+  }
 
   if (!response.ok) {
     throw new Error(`DeepSeek memory extraction failed (${response.status})`);
@@ -207,6 +240,9 @@ const processMemoryJob = async (job) => {
   const extraction = await requestMemoryExtraction({
     existingMemories,
     messages,
+    ownerId,
+    requestId: String(job.id),
+    sessionId,
   });
   const candidates = [
     ...new Map(

@@ -9,6 +9,7 @@ import {
   ListMemories,
   UpdateMemorySettings,
 } from "../Controllers/MemoryController.js";
+import { ListUsage } from "../Controllers/UsageController.js";
 
 const UserRouter = Router();
 
@@ -20,6 +21,7 @@ UserRouter.get("/me", AuthUser, GetCurrentUser);
 UserRouter.patch("/memory-settings", AuthUser, UpdateMemorySettings);
 UserRouter.get("/memories", AuthUser, ListMemories);
 UserRouter.delete("/memories/:memoryId", AuthUser, DeleteMemory);
+UserRouter.get("/usage", AuthUser, ListUsage);
 UserRouter.post("/logout", LogoutUser);
 
 export default UserRouter;

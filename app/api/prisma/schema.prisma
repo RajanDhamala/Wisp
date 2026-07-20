@@ -22,6 +22,7 @@ model User {
   projects            Project[]
   savedResponses      SavedResponse[]
   memories            UserMemory[]
+  tokenQuota          TokenQuota?
   createdAt           DateTime        @default(now())
   provider            String
 }
@@ -116,4 +117,13 @@ model SessionMemoryState {
   processedThroughAt DateTime?
   processedMessageId String?
   updatedAt          DateTime  @updatedAt
+}
+
+model TokenQuota {
+  owner           String   @id
+  user            User     @relation(fields: [owner], references: [id], onDelete: Cascade)
+  tokenLimit      BigInt
+  remainingTokens BigInt
+  periodStartedAt DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 }
