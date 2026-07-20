@@ -134,6 +134,7 @@ export const ChatPageContent = () => {
     useState<ChatActionDialogState | null>(null);
   const [librarySearch, setLibrarySearch] = useState("");
   const [pageError, setPageError] = useState<string | null>(null);
+  const [webSearchEnabled, setWebSearchEnabled] = useState(false);
   const chatScrollRef = useRef<HTMLDivElement>(null);
   const hydratedGenerationRef = useRef<string | null>(null);
   const landingDraftConsumedRef = useRef(false);
@@ -151,6 +152,14 @@ export const ChatPageContent = () => {
     queryKey: projectQueryKeys.all,
     queryFn: () => apiRequest<Project[]>("/projects"),
   });
+  const webSearchAvailable =
+    chatMode === "normal" &&
+    modelsQuery.data?.models.find((model) => model.id === selectedModel)
+      ?.provider === "openrouter";
+
+  useEffect(() => {
+    if (!webSearchAvailable) setWebSearchEnabled(false);
+  }, [webSearchAvailable]);
 
   const libraryQuery = useInfiniteQuery({
     queryKey: libraryQueryKeys.list(librarySearch),
@@ -1146,6 +1155,7 @@ export const ChatPageContent = () => {
       sessionId,
       temporaryAssistantIds,
       temporaryUserId,
+      webSearch: webSearchEnabled && webSearchAvailable,
     });
   }, [
     activeChatId,
@@ -1164,6 +1174,8 @@ export const ChatPageContent = () => {
     setAttachments,
     setComposerValue,
     unusedChat,
+    webSearchAvailable,
+    webSearchEnabled,
   ]);
 
   const models = useMemo(
@@ -1375,6 +1387,9 @@ export const ChatPageContent = () => {
               awaitingPersistedAssistant
             }
             value={composerValue}
+            webSearchAvailable={webSearchAvailable}
+            webSearchEnabled={webSearchEnabled && webSearchAvailable}
+            onWebSearchChange={setWebSearchEnabled}
           />
         </div>
       </main>

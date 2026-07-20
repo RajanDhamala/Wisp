@@ -3,7 +3,9 @@ import claudeLogo from "@lobehub/icons-static-svg/icons/claude-color.svg";
 import deepSeekLogo from "@lobehub/icons-static-svg/icons/deepseek-color.svg";
 import kimiLogo from "@lobehub/icons-static-svg/icons/kimi.svg";
 import minimaxLogo from "@lobehub/icons-static-svg/icons/minimax-color.svg";
+import nvidiaLogo from "@lobehub/icons-static-svg/icons/nvidia-color.svg";
 import openAiLogo from "@lobehub/icons-static-svg/icons/openai.svg";
+import openRouterLogo from "@lobehub/icons-static-svg/icons/openrouter-color.svg";
 import qwenLogo from "@lobehub/icons-static-svg/icons/qwen-color.svg";
 import xiaomiMimoLogo from "@lobehub/icons-static-svg/icons/xiaomimimo.svg";
 import zaiLogo from "@lobehub/icons-static-svg/icons/zai.svg";
@@ -23,6 +25,9 @@ const MODEL_LOGOS: ReadonlyArray<{
   { match: "mimo", src: xiaomiMimoLogo, invertInDark: true },
   { match: "kimi", src: kimiLogo, invertInDark: true },
   { match: "glm", src: zaiLogo, invertInDark: true },
+  { match: "nvidia", src: nvidiaLogo },
+  { match: "nemotron", src: nvidiaLogo },
+  { match: "openrouter", src: openRouterLogo },
 ];
 
 export const ModelLogo = ({

@@ -462,8 +462,11 @@ const ComposerComponent = ({
   onModelChange,
   onRemoveAttachment,
   onSubmit,
+  onWebSearchChange,
   provider,
   selectedModel,
+  webSearchAvailable,
+  webSearchEnabled,
 }: {
   attachments: PendingAttachment[];
   chatMode: ChatMode;
@@ -480,8 +483,11 @@ const ComposerComponent = ({
   onModelChange: (model: string) => void;
   onRemoveAttachment: (id: string) => void;
   onSubmit: () => void;
+  onWebSearchChange: (enabled: boolean) => void;
   provider: string;
   selectedModel: string;
+  webSearchAvailable: boolean;
+  webSearchEnabled: boolean;
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -646,6 +652,31 @@ const ComposerComponent = ({
                 ? `${attachments.length}/${MAX_ATTACHMENT_COUNT} files`
                 : "Add files"}
             </span>
+            <button
+              aria-label={
+                webSearchEnabled
+                  ? "Turn off paid web search"
+                  : "Turn on paid web search"
+              }
+              aria-pressed={webSearchEnabled}
+              className={`ml-1 flex h-9 shrink-0 items-center gap-1.5 rounded-full px-2.5 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${webSearchEnabled
+                ? "bg-blue-100 text-blue-700 hover:bg-blue-200 dark:bg-blue-950 dark:text-blue-300 dark:hover:bg-blue-900"
+                : "text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-white"
+                }`}
+              disabled={sending || !webSearchAvailable}
+              onClick={() => onWebSearchChange(!webSearchEnabled)}
+              title={
+                webSearchAvailable
+                  ? "Paid OpenRouter web search"
+                  : chatMode === "branching"
+                    ? "Web search is unavailable while branching"
+                    : "Web search is unavailable for this model"
+              }
+              type="button"
+            >
+              <Search className="size-4" strokeWidth={2.25} />
+              <span className="hidden sm:inline">Search</span>
+            </button>
           </div>
           <div className="flex items-center gap-1">
             {chatMode === "branching" ? (

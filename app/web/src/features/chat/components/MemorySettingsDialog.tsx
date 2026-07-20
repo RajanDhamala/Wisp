@@ -2,6 +2,7 @@ import {
   BarChart3,
   Bell,
   Brain,
+  ArrowUpRight,
   Moon,
   Palette,
   Shield,
@@ -11,11 +12,12 @@ import {
   X,
   type LucideIcon,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   useInfiniteQuery,
   useMutation,
+  useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
 import toast from "react-hot-toast";
@@ -23,11 +25,19 @@ import useUserStore, {
   CURRENT_USER_QUERY_KEY,
   type CurrentUser,
 } from "@/UserStore";
-import { apiRequest, fetchMemoryPage, memoryQueryKeys } from "../chatApi";
+import {
+  apiRequest,
+  fetchMemoryPage,
+  fetchUsageSummary,
+  memoryQueryKeys,
+  usageQueryKeys,
+} from "../chatApi";
 import type { MemoryPages } from "../chatTypes";
 import { getSafeAvatarUrl, getUserInitials } from "../chatUtils";
 import { useChatClientStore } from "../state/chatClientStore";
 import { IconButton } from "./ChatPrimitives";
+
+const UsageDetailsDialog = lazy(() => import("./UsageDetailsDialog"));
 
 type SettingsSectionId =
   | "general"
@@ -67,9 +77,19 @@ const formatMemoryDate = (value: string) =>
 const formatMemoryKind = (kind: string) =>
   `${kind.charAt(0)}${kind.slice(1).toLowerCase()}`;
 
+const formatUsageNumber = (value: number) =>
+  new Intl.NumberFormat(undefined, {
+    maximumFractionDigits: 1,
+    notation: value >= 10_000 ? "compact" : "standard",
+  }).format(value);
+
+const formatTokenCredit = (value: string | null) =>
+  value === null ? "—" : formatUsageNumber(Number(value));
+
 export const MemorySettingsDialog = ({ onClose }: { onClose: () => void }) => {
   const [activeSection, setActiveSection] =
     useState<SettingsSectionId>("general");
+  const [usageDetailsOpen, setUsageDetailsOpen] = useState(false);
   const queryClient = useQueryClient();
   const currentUser = useUserStore((state) => state.currentUser);
   const setCurrentUser = useUserStore((state) => state.setCurrentUser);
@@ -88,6 +108,28 @@ export const MemorySettingsDialog = ({ onClose }: { onClose: () => void }) => {
     () => memoriesQuery.data?.pages.flatMap((page) => page.items) ?? [],
     [memoriesQuery.data],
   );
+  const usageQuery = useQuery({
+    enabled: activeSection === "usage",
+    queryKey: usageQueryKeys.summary(),
+    queryFn: ({ signal }) => fetchUsageSummary({ signal }),
+    refetchInterval: activeSection === "usage" ? 15_000 : false,
+  });
+  const recentUsageDays = usageQuery.data?.daily.slice(-14) ?? [];
+  const maximumDailyTokens = Math.max(
+    1,
+    ...recentUsageDays.map((day) => day.totalTokens),
+  );
+  const maximumModelTokens = Math.max(
+    1,
+    ...(usageQuery.data?.models.map((model) => model.totalTokens) ?? []),
+  );
+  const quotaLimit = Number(usageQuery.data?.quota.tokenLimit ?? 0);
+  const quotaRemaining = Number(
+    usageQuery.data?.quota.remainingTokens ?? 0,
+  );
+  const quotaRemainingPercent = quotaLimit
+    ? Math.max(0, Math.min(100, (quotaRemaining / quotaLimit) * 100))
+    : 0;
   const updateSettingsMutation = useMutation<CurrentUser, Error, boolean>({
     mutationKey: ["memories", "update-settings"],
     mutationFn: (enabled) =>
@@ -136,11 +178,11 @@ export const MemorySettingsDialog = ({ onClose }: { onClose: () => void }) => {
 
   useEffect(() => {
     const closeOnEscape = (event: globalThis.KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
+      if (event.key === "Escape" && !usageDetailsOpen) onClose();
     };
     window.addEventListener("keydown", closeOnEscape);
     return () => window.removeEventListener("keydown", closeOnEscape);
-  }, [onClose]);
+  }, [onClose, usageDetailsOpen]);
 
   const activeSettingsSection =
     SETTINGS_SECTIONS.find((section) => section.id === activeSection) ??
@@ -149,6 +191,7 @@ export const MemorySettingsDialog = ({ onClose }: { onClose: () => void }) => {
   if (typeof document === "undefined") return null;
 
   return createPortal(
+    <>
     <div className="fixed inset-0 z-[120] flex items-center justify-center p-2 sm:p-6">
       <button
         aria-label="Close settings"
@@ -507,17 +550,255 @@ export const MemorySettingsDialog = ({ onClose }: { onClose: () => void }) => {
             )}
 
             {activeSection === "usage" && (
-              <section className="flex min-h-[26rem] flex-col items-center justify-center py-10 text-center">
-                <span className="flex size-12 items-center justify-center rounded-full bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
-                  <BarChart3 className="size-5" />
-                </span>
-                <h3 className="mt-4 text-sm font-medium text-zinc-900 dark:text-zinc-100">
-                  Usage tracking is not enabled yet
-                </h3>
-                <p className="mt-1.5 max-w-sm text-xs leading-5 text-zinc-500 dark:text-zinc-400">
-                  Model requests, messages, and token usage will appear here
-                  after server-side metering is implemented.
-                </p>
+              <section className="py-5 sm:py-6">
+                {usageQuery.isLoading ? (
+                  <div className="space-y-3">
+                    <div className="h-28 animate-pulse rounded-2xl bg-zinc-100 dark:bg-zinc-800" />
+                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                      {[0, 1, 2, 3].map((item) => (
+                        <div
+                          className="h-20 animate-pulse rounded-xl bg-zinc-100 dark:bg-zinc-800"
+                          key={item}
+                        />
+                      ))}
+                    </div>
+                    <div className="h-44 animate-pulse rounded-2xl bg-zinc-100 dark:bg-zinc-800" />
+                  </div>
+                ) : usageQuery.error ? (
+                  <div className="flex min-h-[26rem] flex-col items-center justify-center text-center">
+                    <span className="flex size-12 items-center justify-center rounded-full bg-red-50 text-red-500 dark:bg-red-950/40 dark:text-red-400">
+                      <BarChart3 className="size-5" />
+                    </span>
+                    <h3 className="mt-4 text-sm font-medium text-zinc-900 dark:text-zinc-100">
+                      Usage could not be loaded
+                    </h3>
+                    <p className="mt-1.5 max-w-sm text-xs leading-5 text-zinc-500 dark:text-zinc-400">
+                      {usageQuery.error.message}
+                    </p>
+                    <button
+                      className="mt-4 rounded-xl border border-zinc-200 px-3 py-2 text-xs font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                      onClick={() => void usageQuery.refetch()}
+                      type="button"
+                    >
+                      Try again
+                    </button>
+                  </div>
+                ) : usageQuery.data ? (
+                  <div className="space-y-5">
+                    <div className="rounded-2xl border border-zinc-200 bg-zinc-50/70 p-4 dark:border-zinc-700 dark:bg-zinc-800/45 sm:p-5">
+                      <div className="flex items-start justify-between gap-4">
+                        <div>
+                          <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">
+                            {usageQuery.data.quota.metered
+                              ? "Token credits"
+                              : "Included test credit"}
+                          </p>
+                          <p className="mt-1 text-2xl font-semibold tracking-tight text-zinc-950 dark:text-white">
+                            {usageQuery.data.quota.metered
+                              ? formatTokenCredit(
+                                  usageQuery.data.quota.remainingTokens,
+                                )
+                              : `$${usageQuery.data.plan.defaultIncludedCreditUsd.toFixed(2)}`}
+                          </p>
+                          <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                            {usageQuery.data.quota.metered
+                              ? `${formatTokenCredit(usageQuery.data.quota.tokenLimit)} total credits`
+                              : "Usage limits and dollar deductions are not enforced yet"}
+                          </p>
+                        </div>
+                        <span className="rounded-full border border-zinc-200 bg-white px-2.5 py-1 text-[11px] font-medium text-zinc-600 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">
+                          {usageQuery.data.quota.source === "redis"
+                            ? "Live"
+                            : usageQuery.data.quota.metered
+                              ? "Database"
+                              : "Testing"}
+                        </span>
+                      </div>
+                      {usageQuery.data.quota.metered && (
+                        <div className="mt-4">
+                          <div className="h-2 overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-700">
+                            <div
+                              className="h-full rounded-full bg-zinc-900 transition-[width] dark:bg-zinc-100"
+                              style={{ width: `${quotaRemainingPercent}%` }}
+                            />
+                          </div>
+                          <div className="mt-2 flex justify-between gap-3 text-[11px] text-zinc-500 dark:text-zinc-400">
+                            <span>
+                              {formatTokenCredit(
+                                usageQuery.data.quota.usedTokens,
+                              )}{" "}
+                              used
+                            </span>
+                            <span>{quotaRemainingPercent.toFixed(0)}% left</span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                      {[
+                        {
+                          label: "Requests",
+                          value: usageQuery.data.totals.requests,
+                        },
+                        {
+                          label: "Messages",
+                          value: usageQuery.data.totals.messages,
+                        },
+                        {
+                          label: "Input tokens",
+                          value: usageQuery.data.totals.inputTokens,
+                        },
+                        {
+                          label: "Output tokens",
+                          value: usageQuery.data.totals.outputTokens,
+                        },
+                      ].map((metric) => (
+                        <div
+                          className="rounded-xl border border-zinc-200 p-3 dark:border-zinc-700"
+                          key={metric.label}
+                        >
+                          <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
+                            {metric.label}
+                          </p>
+                          <p
+                            className="mt-1 text-lg font-semibold tabular-nums text-zinc-900 dark:text-zinc-100"
+                            title={metric.value.toLocaleString()}
+                          >
+                            {formatUsageNumber(metric.value)}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="rounded-2xl border border-zinc-200 p-4 dark:border-zinc-700">
+                      <div className="flex items-end justify-between gap-4">
+                        <div>
+                          <h3 className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
+                            Daily tokens
+                          </h3>
+                          <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                            Last 14 days · {formatUsageNumber(
+                              usageQuery.data.totals.totalTokens,
+                            )}{" "}
+                            tokens in 30 days
+                          </p>
+                        </div>
+                        {usageQuery.data.totals.cachedInputTokens > 0 && (
+                          <span className="text-[11px] text-zinc-500 dark:text-zinc-400">
+                            {formatUsageNumber(
+                              usageQuery.data.totals.cachedInputTokens,
+                            )}{" "}
+                            cached
+                          </span>
+                        )}
+                      </div>
+                      <div
+                        aria-label="Token usage for the last 14 days"
+                        className="mt-5 flex h-28 items-end gap-1.5"
+                        role="img"
+                      >
+                        {recentUsageDays.map((day) => (
+                          <div
+                            className="flex h-full min-w-0 flex-1 items-end"
+                            key={day.date}
+                            title={`${new Date(`${day.date}T00:00:00Z`).toLocaleDateString()}: ${day.totalTokens.toLocaleString()} tokens`}
+                          >
+                            <span
+                              className={`w-full rounded-sm ${
+                                day.totalTokens
+                                  ? "bg-zinc-700 dark:bg-zinc-300"
+                                  : "bg-zinc-100 dark:bg-zinc-800"
+                              }`}
+                              style={{
+                                height: day.totalTokens
+                                  ? `${Math.max(5, (day.totalTokens / maximumDailyTokens) * 100)}%`
+                                  : "3px",
+                              }}
+                            />
+                          </div>
+                        ))}
+                      </div>
+                      <div className="mt-2 flex justify-between text-[10px] text-zinc-400 dark:text-zinc-500">
+                        <span>
+                          {recentUsageDays[0]
+                            ? new Date(
+                                `${recentUsageDays[0].date}T00:00:00Z`,
+                              ).toLocaleDateString(undefined, {
+                                day: "numeric",
+                                month: "short",
+                              })
+                            : ""}
+                        </span>
+                        <span>Today</span>
+                      </div>
+                    </div>
+
+                    <div>
+                      <div className="mb-3 flex items-end justify-between gap-4">
+                        <div>
+                          <h3 className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
+                            Models
+                          </h3>
+                          <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                            Token usage by actual provider model
+                          </p>
+                        </div>
+                      </div>
+                      {usageQuery.data.models.length ? (
+                        <div className="space-y-2">
+                          {usageQuery.data.models.slice(0, 6).map((model) => (
+                            <div
+                              className="rounded-xl border border-zinc-200 p-3 dark:border-zinc-700"
+                              key={model.model}
+                            >
+                              <div className="flex items-center justify-between gap-4">
+                                <span className="min-w-0 truncate text-xs font-medium text-zinc-700 dark:text-zinc-300">
+                                  {model.model}
+                                </span>
+                                <span className="shrink-0 text-[11px] tabular-nums text-zinc-500 dark:text-zinc-400">
+                                  {formatUsageNumber(model.totalTokens)} tokens ·{" "}
+                                  {model.requests} req
+                                </span>
+                              </div>
+                              <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800">
+                                <div
+                                  className="h-full rounded-full bg-zinc-600 dark:bg-zinc-400"
+                                  style={{
+                                    width: `${Math.max(2, (model.totalTokens / maximumModelTokens) * 100)}%`,
+                                  }}
+                                />
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="rounded-2xl border border-dashed border-zinc-200 px-5 py-8 text-center dark:border-zinc-700">
+                          <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                            No model usage in the last 30 days
+                          </p>
+                          <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                            New completed responses will appear here.
+                          </p>
+                        </div>
+                      )}
+                    </div>
+
+                    <button
+                      className="group flex min-h-12 items-center justify-between rounded-2xl border border-zinc-200 bg-zinc-50/70 px-4 py-3 text-sm font-medium text-zinc-800 transition-colors hover:border-sky-300 hover:bg-sky-50 dark:border-zinc-700 dark:bg-zinc-800/45 dark:text-zinc-100 dark:hover:border-cyan-700 dark:hover:bg-cyan-950/20"
+                      onClick={() => setUsageDetailsOpen(true)}
+                      type="button"
+                    >
+                      <span>
+                        View detailed usage
+                        <span className="ml-2 text-xs font-normal text-zinc-500 dark:text-zinc-400">
+                          Filters, trends, and model breakdowns
+                        </span>
+                      </span>
+                      <ArrowUpRight className="size-4 shrink-0 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
+                    </button>
+                  </div>
+                ) : null}
               </section>
             )}
 
@@ -556,7 +837,19 @@ export const MemorySettingsDialog = ({ onClose }: { onClose: () => void }) => {
           </div>
         </div>
       </section>
-    </div>,
+    </div>
+    {usageDetailsOpen && (
+      <Suspense
+        fallback={
+          <div className="fixed inset-0 z-[140] flex items-center justify-center bg-zinc-950/55 backdrop-blur-[3px] dark:bg-black/80">
+            <span className="size-7 animate-spin rounded-full border-2 border-white/25 border-t-white" />
+          </div>
+        }
+      >
+        <UsageDetailsDialog onClose={() => setUsageDetailsOpen(false)} />
+      </Suspense>
+    )}
+    </>,
     document.body,
   );
 };

@@ -11,6 +11,8 @@ import type {
   MemoryPage,
   SessionPage,
   SessionPageResponse,
+  UsageRange,
+  UsageSummary,
 } from "./chatTypes";
 import { normalizeSession } from "./chatUtils";
 
@@ -40,6 +42,11 @@ export const memoryQueryKeys = {
   all: ["memories"] as const,
   lists: ["memories", "list"] as const,
   list: ["memories", "list"] as const,
+};
+
+export const usageQueryKeys = {
+  summary: (range: UsageRange = "30d") =>
+    ["usage", "summary", { range }] as const,
 };
 
 export const readResponseError = async (response: Response) => {
@@ -132,6 +139,14 @@ export const fetchMemoryPage = ({
     signal,
   });
 };
+
+export const fetchUsageSummary = ({
+  range = "30d",
+  signal,
+}: {
+  range?: UsageRange;
+  signal?: AbortSignal;
+} = {}) => apiRequest<UsageSummary>(`/user/usage?range=${range}`, { signal });
 
 export const consumeEventStream = async (
   response: Response,

@@ -76,9 +76,9 @@ const MessageBubble = memo(function MessageBubble({
 
   if (message.role === "user") {
     return (
-      <div className="flex justify-end">
-        <div className="group max-w-[85%] sm:max-w-[75%]">
-          <div className="whitespace-pre-wrap rounded-3xl bg-zinc-100 px-4 py-2.5 text-[15px] leading-6 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100">
+      <div className="flex min-w-0 justify-end">
+        <div className="group min-w-0 max-w-[85%] sm:max-w-[75%]">
+          <div className="max-w-full whitespace-pre-wrap break-words [overflow-wrap:anywhere] rounded-3xl bg-zinc-100 px-4 py-2.5 text-[15px] leading-6 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100">
             {message.content}
           </div>
           <div className="mt-1 flex justify-end opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100 md:focus-within:opacity-100">
@@ -106,7 +106,7 @@ const MessageBubble = memo(function MessageBubble({
           />
         </div>
       )}
-      <div className="break-words text-[15px] leading-7 text-zinc-800 dark:text-zinc-200">
+      <div className="min-w-0 max-w-full break-words [overflow-wrap:anywhere] text-[15px] leading-7 text-zinc-800 dark:text-zinc-200">
         <AssistantContent
           content={message.content}
           constrainCodeHeight={constrainCodeHeight}
@@ -436,7 +436,10 @@ const ConversationMessagesComponent = ({
           const firstMessage = group[0];
           if (group.length === 1) {
             return (
-              <div className="mx-auto w-full max-w-3xl" key={firstMessage.id}>
+              <div
+                className="mx-auto min-w-0 w-full max-w-3xl"
+                key={firstMessage.id}
+              >
                 <MessageBubble
                   message={firstMessage}
                   onDelete={onDeleteResponse}

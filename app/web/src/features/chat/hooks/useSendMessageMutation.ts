@@ -61,6 +61,7 @@ export const useSendMessageMutation = ({
       sessionId,
       temporaryAssistantIds,
       temporaryUserId,
+      webSearch,
     }) => {
       let completedPayload: StreamDoneEvent | null = null;
       const pendingAssistantIds = Object.values(temporaryAssistantIds);
@@ -113,6 +114,7 @@ export const useSendMessageMutation = ({
               type,
             })),
             content,
+            webSearch,
             ...(models.length > 1
               ? { models }
               : { model: models[0] }),

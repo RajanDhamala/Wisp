@@ -268,12 +268,73 @@ const getFenceDetails = (info: string) => {
   };
 };
 
-const repairUnfencedNamedBlocks = (content: string) =>
-  content.replace(
-    /(^|\n)([a-z0-9_+.-]+\s+(?:file|filename|title)=(?:"[^"]+"|'[^']+'|[^\s]+))[ \t]*\r?\n(?![ \t]*(?:\r?\n[ \t]*)*```)/gi,
-    (_match, prefix: string, header: string) =>
-      `${prefix}\`\`\`${header}\n`,
-  );
+const namedBlockHeaderPattern =
+  /^[a-z0-9_+.-]+\s+(?:file|filename|title)=(?:"[^"]+"|'[^']+'|\S+)\s*$/i;
+const proseFenceLanguages = new Set(["", "markdown", "md", "text", "txt"]);
+
+const repairUnfencedNamedBlocks = (content: string) => {
+  const repairedLines: string[] = [];
+  let openFence: { info: string; lineIndex: number } | null = null;
+
+  for (const line of content.split("\n")) {
+    const fence = line.match(/^([ \t]*)```(.*)$/);
+
+    if (fence) {
+      const indentation = fence[1];
+      const info = fence[2].trim();
+
+      if (!openFence) {
+        repairedLines.push(line);
+        openFence = { info, lineIndex: repairedLines.length - 1 };
+        continue;
+      }
+
+      if (!info) {
+        repairedLines.push(line);
+        openFence = null;
+        continue;
+      }
+
+      const openLanguage = getFenceDetails(openFence.info).language;
+      if (
+        namedBlockHeaderPattern.test(info) &&
+        proseFenceLanguages.has(openLanguage)
+      ) {
+        // Some models merge a closing fence and the next named opening fence
+        // into one line (```tsx file=/src/App.tsx). Treat the earlier prose as
+        // normal Markdown and this line as the real code opening.
+        repairedLines[openFence.lineIndex] = "";
+        repairedLines.push(`${indentation}\`\`\`${info}`);
+        openFence = { info, lineIndex: repairedLines.length - 1 };
+        continue;
+      }
+
+      repairedLines.push(line);
+      continue;
+    }
+
+    const bareHeader = line.trim();
+    if (namedBlockHeaderPattern.test(bareHeader)) {
+      if (!openFence) {
+        repairedLines.push(`\`\`\`${bareHeader}`);
+        openFence = { info: bareHeader, lineIndex: repairedLines.length - 1 };
+        continue;
+      }
+
+      const openLanguage = getFenceDetails(openFence.info).language;
+      if (proseFenceLanguages.has(openLanguage)) {
+        repairedLines[openFence.lineIndex] = "";
+        repairedLines.push(`\`\`\`${bareHeader}`);
+        openFence = { info: bareHeader, lineIndex: repairedLines.length - 1 };
+        continue;
+      }
+    }
+
+    repairedLines.push(line);
+  }
+
+  return repairedLines.join("\n");
+};
 
 const parseMessageContent = (content: string): ContentPart[] => {
   const repairedContent = repairUnfencedNamedBlocks(content);
@@ -964,7 +1025,9 @@ const markdownComponents: Components = {
     <ol className="my-3 list-decimal space-y-1 pl-6">{children}</ol>
   ),
   p: ({ children }) => (
-    <p className="my-3 whitespace-pre-wrap first:mt-0 last:mb-0">{children}</p>
+    <p className="my-3 max-w-full whitespace-pre-wrap break-words [overflow-wrap:anywhere] first:mt-0 last:mb-0">
+      {children}
+    </p>
   ),
   pre: ({ children }) => (
     <pre className="subtle-scrollbar my-4 overflow-x-auto rounded-xl bg-zinc-950 p-4 text-[13px] leading-6 text-zinc-100 [&_code]:bg-transparent [&_code]:p-0 [&_code]:text-inherit">
@@ -1004,7 +1067,7 @@ const markdownComponents: Components = {
 const markdownPlugins = [remarkGfm];
 
 const MarkdownText = ({ content }: { content: string }) => (
-  <div className="min-w-0">
+  <div className="min-w-0 max-w-full [overflow-wrap:anywhere]">
     <ReactMarkdown
       components={markdownComponents}
       remarkPlugins={markdownPlugins}

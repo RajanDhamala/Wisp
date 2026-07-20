@@ -90,6 +90,44 @@ export type MemoryPage = {
 
 export type MemoryPages = InfiniteData<MemoryPage, string | null>;
 
+export type UsageMetric = {
+  cachedInputTokens: number;
+  inputTokens: number;
+  outputTokens: number;
+  requests: number;
+  totalTokens: number;
+};
+
+export type UsageRange = "5h" | "24h" | "7d" | "30d" | "90d";
+
+export type UsageSummary = {
+  daily: Array<UsageMetric & { date: string }>;
+  dailyByModel: Array<UsageMetric & { date: string; model: string }>;
+  models: Array<UsageMetric & { model: string }>;
+  plan: {
+    defaultIncludedCreditUsd: number;
+    enforcementEnabled: boolean;
+    freeMessagesPerDay: number;
+  };
+  period: {
+    bucket: "day" | "hour";
+    days: number;
+    end: string;
+    range: UsageRange;
+    start: string;
+  };
+  quota: {
+    metered: boolean;
+    periodStartedAt: string | null;
+    remainingTokens: string | null;
+    source: "redis" | "database" | null;
+    tokenLimit: string | null;
+    updatedAt: string | null;
+    usedTokens: string | null;
+  };
+  totals: UsageMetric & { messages: number };
+};
+
 export type ApiEnvelope<T> = {
   success: boolean;
   message: string;
@@ -152,6 +190,7 @@ export type SendMessageVariables = {
   sessionId: string;
   temporaryAssistantIds: Record<string, string>;
   temporaryUserId: string;
+  webSearch: boolean;
 };
 
 export type PendingAttachment = {
